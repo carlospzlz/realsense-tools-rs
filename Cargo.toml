@@ -1,0 +1,12 @@
+[package]
+name = "realsense-tools-rs"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "enumerate-devices"
+path = "src/enumerate_devices.rs"
+
+[dependencies]
+anyhow = "1.0.95"
+realsense-rust = "1.2.3"
