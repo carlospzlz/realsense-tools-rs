@@ -7,6 +7,12 @@ edition = "2021"
 name = "enumerate-devices"
 path = "src/enumerate_devices.rs"
 
+[[bin]]
+name = "realsense-viewer"
+path = "src/realsense_viewer.rs"
+
 [dependencies]
 anyhow = "1.0.95"
+eframe = "0.31.0"
+env_logger = "0.11.6"
 realsense-rust = "1.2.3"
