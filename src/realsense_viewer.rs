@@ -1,54 +1,9 @@
 use eframe::egui;
 use realsense_rust::frame::FrameEx;
 use std::collections::HashSet;
-use std::ffi::CStr;
 use std::time::Duration;
 
-/// Gets info from a device or returns "N/A"
-fn match_info(
-    device: &realsense_rust::device::Device,
-    info_param: realsense_rust::kind::Rs2CameraInfo,
-) -> String {
-    match device.info(info_param) {
-        Some(s) => String::from(s.to_str().unwrap()),
-        None => String::from("N/A"),
-    }
-}
-
-///
-fn get_dev_repr(index: u8, dev: &realsense_rust::device::Device) -> String {
-    let name = match_info(dev, realsense_rust::kind::Rs2CameraInfo::Name);
-    let serial_number = match_info(&dev, realsense_rust::kind::Rs2CameraInfo::SerialNumber);
-    format!("{index}: {name} ({serial_number})")
-}
-
-///
-fn color_frame_to_rgb_img(color_frame: &realsense_rust::frame::ColorFrame) -> image::RgbImage {
-    let mut img = image::RgbImage::new(color_frame.width() as u32, color_frame.height() as u32);
-    for (x, y, pixel) in img.enumerate_pixels_mut() {
-        match color_frame.get_unchecked(x as usize, y as usize) {
-            realsense_rust::frame::PixelKind::Bgr8 { b, g, r } => {
-                *pixel = image::Rgb([*r, *g, *b]);
-            }
-            _ => panic!("Color type is wrong!"),
-        }
-    }
-    img
-}
-
-fn infrared_frame_to_rgb_img(frame: &realsense_rust::frame::InfraredFrame) -> image::RgbImage {
-    let mut img = image::RgbImage::new(frame.width() as u32, frame.height() as u32);
-    for (x, y, pixel) in img.enumerate_pixels_mut() {
-        match frame.get_unchecked(x as usize, y as usize) {
-            realsense_rust::frame::PixelKind::Y8 { y } => {
-                *pixel = image::Rgb([*y, *y, *y]);
-            }
-            _ => panic!("Color type is wrong!"),
-        }
-    }
-    img
-}
-fn main() -> eframe::Result {
+fn main() -> Result<(), eframe::Error> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
     let realsense_ctx =
@@ -63,44 +18,6 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| Ok(Box::new(MyApp::new(cc, realsense_ctx)))),
     )
-}
-
-fn create_pipeline(
-    ctx: &realsense_rust::context::Context,
-    sn: &CStr,
-) -> Option<realsense_rust::pipeline::ActivePipeline> {
-    let pipeline = realsense_rust::pipeline::InactivePipeline::try_from(ctx)
-        .expect("Failed to create pipeline from context");
-    let mut config = realsense_rust::config::Config::new();
-    config
-        .enable_device_from_serial(sn)
-        .expect("Failed to enable device")
-        .enable_all_streams()
-        .expect("Failed to disable all streams");
-    //.enable_stream(
-    //    realsense_rust::kind::Rs2StreamKind::Color,
-    //    None,
-    //    640,
-    //    0,
-    //    realsense_rust::kind::Rs2Format::Bgr8,
-    //    30,
-    //)
-    //.expect("Failed to enable the color stream")
-    //.enable_stream(
-    //    realsense_rust::kind::Rs2StreamKind::Depth,
-    //    None,
-    //    0,
-    //    240,
-    //    realsense_rust::kind::Rs2Format::Z16,
-    //    30,
-    //)
-    //.expect("Failed to enable the depth stream");
-
-    // Change pipeline's type from InactivePipeline -> ActivePipeline
-    let pipeline = pipeline
-        .start(Some(config))
-        .expect("Failed to start pipeline");
-    Some(pipeline)
 }
 
 struct MyApp {
@@ -130,9 +47,11 @@ impl MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, egui_ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Update state
+        // Check selected camera and update pipeline if needed
         let devices = self.realsense_ctx.query_devices(HashSet::new());
         self.update_pipeline(&devices);
+
+        // Get frames
         let frames = self.get_frames();
 
         // Update GUI
@@ -147,49 +66,78 @@ impl eframe::App for MyApp {
 
 impl MyApp {
     fn update_pipeline(&mut self, devices: &Vec<realsense_rust::device::Device>) {
-        if devices.len() > 0 {
-            if usize::from(self.dev_index) < devices.len() {
-                let name = match_info(
-                    &devices[self.dev_index as usize],
-                    realsense_rust::kind::Rs2CameraInfo::Name,
-                );
-                if name.starts_with("Intel RealSense") {
-                    if !self.pipeline.is_some() {
-                        let serial_number = devices[self.dev_index as usize]
-                            .info(realsense_rust::kind::Rs2CameraInfo::SerialNumber)
-                            .expect("Failed to get serial number");
-                        self.pipeline = create_pipeline(&self.realsense_ctx, serial_number);
-                    }
-                    self.warning = None;
-                } else {
-                    self.pipeline = None;
-                    self.warning = Some(format!(
-                        "Device {0} is not an Intel RealSense",
-                        self.dev_index
-                    ));
-                }
-            } else {
-                self.pipeline = None;
-                self.warning = Some(format!("Device {0} is gone", self.dev_index));
-            }
-        } else {
+        if devices.len() == 0 {
             self.pipeline = None;
             self.warning = Some("No devices!".to_string());
+            return;
         }
+
+        if usize::from(self.dev_index) >= devices.len() {
+            self.pipeline = None;
+            self.warning = Some(format!("Device {0} is gone", self.dev_index));
+            return;
+        }
+
+        let new_device = &devices[self.dev_index as usize];
+        let name = match_info(new_device, realsense_rust::kind::Rs2CameraInfo::Name);
+        if !name.starts_with("Intel RealSense") {
+            self.pipeline = None;
+            self.warning = Some(format!(
+                "Device {0} is not an Intel RealSense",
+                self.dev_index
+            ));
+            return;
+        }
+
+        if let Some(pipeline) = &self.pipeline {
+            let current_device = &pipeline.profile().device();
+            if get_serial_number(new_device) == get_serial_number(current_device) {
+                return;
+            }
+        }
+
+        self.pipeline = self.create_pipeline(new_device);
+        self.warning = None;
+    }
+
+    fn create_pipeline(
+        &mut self,
+        device: &realsense_rust::device::Device,
+    ) -> Option<realsense_rust::pipeline::ActivePipeline> {
+        let pipeline = realsense_rust::pipeline::InactivePipeline::try_from(&self.realsense_ctx)
+            .expect("Failed to create pipeline from context");
+        let mut config = realsense_rust::config::Config::new();
+        let sn = device
+            .info(realsense_rust::kind::Rs2CameraInfo::SerialNumber)
+            .unwrap();
+        config
+            .enable_device_from_serial(sn)
+            .expect("Failed to enable device")
+            .enable_all_streams()
+            .expect("Failed to disable all streams");
+
+        // Change pipeline's type from InactivePipeline -> ActivePipeline
+        let pipeline = pipeline
+            .start(Some(config))
+            .expect("Failed to start pipeline");
+
+        Some(pipeline)
     }
 
     fn get_frames(&mut self) -> Option<realsense_rust::frame::CompositeFrame> {
         if let Some(pipeline) = &mut self.pipeline {
             let timeout = Duration::from_millis(200);
             match pipeline.wait(Some(timeout)) {
-                Ok(frames) => Some(frames),
+                Ok(frames) => {
+                    self.warning = None;
+                    Some(frames)
+                }
                 Err(e) => {
                     self.warning = Some(format!("{e}"));
                     None
                 }
             }
         } else {
-            self.warning = None;
             None
         }
     }
@@ -227,10 +175,8 @@ impl MyApp {
                     let img = img
                         .resize_exact(width, height, image::imageops::FilterType::Lanczos3)
                         .to_rgb8();
-                    let img = egui::ColorImage::from_rgb(
-                        [width as usize, height as usize],
-                        img.as_raw(),
-                    );
+                    let img =
+                        egui::ColorImage::from_rgb([width as usize, height as usize], img.as_raw());
                     ui.vertical(|ui| {
                         let texture = egui_ctx.load_texture("color_frame", img, Default::default());
                         ui.image(&texture);
@@ -252,14 +198,14 @@ impl MyApp {
                             img.as_raw(),
                         );
                         ui.vertical(|ui| {
-                            let texture = egui_ctx.load_texture("color_frame", img, Default::default());
+                            let texture =
+                                egui_ctx.load_texture("color_frame", img, Default::default());
                             ui.image(&texture);
                             let ts = ir_frame.timestamp();
                             let ts_domain = ir_frame.timestamp_domain().as_str();
                             ui.label(format!("ts ({ts_domain}): {ts}"));
                         });
                     }
-
                 });
             }
         });
@@ -377,4 +323,55 @@ impl MyApp {
             }
         });
     }
+}
+
+/// Gets info from a device or returns "N/A"
+fn match_info(
+    device: &realsense_rust::device::Device,
+    info_param: realsense_rust::kind::Rs2CameraInfo,
+) -> String {
+    match device.info(info_param) {
+        Some(s) => String::from(s.to_str().unwrap()),
+        None => String::from("N/A"),
+    }
+}
+
+///
+fn get_serial_number(device: &realsense_rust::device::Device) -> String {
+    match_info(&device, realsense_rust::kind::Rs2CameraInfo::SerialNumber)
+}
+
+///
+fn get_dev_repr(index: u8, dev: &realsense_rust::device::Device) -> String {
+    let name = match_info(dev, realsense_rust::kind::Rs2CameraInfo::Name);
+    let serial_number = match_info(&dev, realsense_rust::kind::Rs2CameraInfo::SerialNumber);
+    format!("{index}: {name} ({serial_number})")
+}
+
+///
+fn color_frame_to_rgb_img(color_frame: &realsense_rust::frame::ColorFrame) -> image::RgbImage {
+    let mut img = image::RgbImage::new(color_frame.width() as u32, color_frame.height() as u32);
+    for (x, y, pixel) in img.enumerate_pixels_mut() {
+        match color_frame.get_unchecked(x as usize, y as usize) {
+            realsense_rust::frame::PixelKind::Bgr8 { b, g, r } => {
+                *pixel = image::Rgb([*r, *g, *b]);
+            }
+            _ => panic!("Color type is wrong!"),
+        }
+    }
+    img
+}
+
+///
+fn infrared_frame_to_rgb_img(frame: &realsense_rust::frame::InfraredFrame) -> image::RgbImage {
+    let mut img = image::RgbImage::new(frame.width() as u32, frame.height() as u32);
+    for (x, y, pixel) in img.enumerate_pixels_mut() {
+        match frame.get_unchecked(x as usize, y as usize) {
+            realsense_rust::frame::PixelKind::Y8 { y } => {
+                *pixel = image::Rgb([*y, *y, *y]);
+            }
+            _ => panic!("Color type is wrong!"),
+        }
+    }
+    img
 }
