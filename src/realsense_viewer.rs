@@ -1,4 +1,5 @@
 use eframe::egui;
+use realsense_rust::frame::FrameEx;
 use std::collections::HashSet;
 use std::ffi::CStr;
 use std::time::Duration;
@@ -22,7 +23,7 @@ fn get_dev_repr(index: u8, dev: &realsense_rust::device::Device) -> String {
 }
 
 ///
-fn color_frame_to_color_img(color_frame: &realsense_rust::frame::ColorFrame) -> egui::ColorImage {
+fn color_frame_to_rgb_img(color_frame: &realsense_rust::frame::ColorFrame) -> image::RgbImage {
     let mut img = image::RgbImage::new(color_frame.width() as u32, color_frame.height() as u32);
     for (x, y, pixel) in img.enumerate_pixels_mut() {
         match color_frame.get_unchecked(x as usize, y as usize) {
@@ -32,9 +33,21 @@ fn color_frame_to_color_img(color_frame: &realsense_rust::frame::ColorFrame) -> 
             _ => panic!("Color type is wrong!"),
         }
     }
-    egui::ColorImage::from_rgb([img.width() as usize, img.height() as usize], img.as_raw())
+    img
 }
 
+fn infrared_frame_to_rgb_img(frame: &realsense_rust::frame::InfraredFrame) -> image::RgbImage {
+    let mut img = image::RgbImage::new(frame.width() as u32, frame.height() as u32);
+    for (x, y, pixel) in img.enumerate_pixels_mut() {
+        match frame.get_unchecked(x as usize, y as usize) {
+            realsense_rust::frame::PixelKind::Y8 { y } => {
+                *pixel = image::Rgb([*y, *y, *y]);
+            }
+            _ => panic!("Color type is wrong!"),
+        }
+    }
+    img
+}
 fn main() -> eframe::Result {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
@@ -62,26 +75,26 @@ fn create_pipeline(
     config
         .enable_device_from_serial(sn)
         .expect("Failed to enable device")
-        .disable_all_streams()
-        .expect("Failed to disable all streams")
-        .enable_stream(
-            realsense_rust::kind::Rs2StreamKind::Color,
-            None,
-            640,
-            0,
-            realsense_rust::kind::Rs2Format::Bgr8,
-            30,
-        )
-        .expect("Failed to enable the color stream")
-        .enable_stream(
-            realsense_rust::kind::Rs2StreamKind::Depth,
-            None,
-            0,
-            240,
-            realsense_rust::kind::Rs2Format::Z16,
-            30,
-        )
-        .expect("Failed to enable the depth stream");
+        .enable_all_streams()
+        .expect("Failed to disable all streams");
+    //.enable_stream(
+    //    realsense_rust::kind::Rs2StreamKind::Color,
+    //    None,
+    //    640,
+    //    0,
+    //    realsense_rust::kind::Rs2Format::Bgr8,
+    //    30,
+    //)
+    //.expect("Failed to enable the color stream")
+    //.enable_stream(
+    //    realsense_rust::kind::Rs2StreamKind::Depth,
+    //    None,
+    //    0,
+    //    240,
+    //    realsense_rust::kind::Rs2Format::Z16,
+    //    30,
+    //)
+    //.expect("Failed to enable the depth stream");
 
     // Change pipeline's type from InactivePipeline -> ActivePipeline
     let pipeline = pipeline
@@ -187,13 +200,67 @@ impl MyApp {
         frames: Option<realsense_rust::frame::CompositeFrame>,
     ) {
         egui::CentralPanel::default().show(egui_ctx, |ui| {
-            // Draw color frame
+            // Draw all frames
             if let Some(frames) = frames {
-                let color_frames = frames.frames_of_type::<realsense_rust::frame::ColorFrame>();
-                let color_frame = &color_frames[0];
-                let color_img = color_frame_to_color_img(color_frame);
-                let texture = egui_ctx.load_texture("color_frame", color_img, Default::default());
-                ui.image(&texture);
+                // Distribute all available space
+                let asize = ui.available_size();
+                let (width, height) = (asize[0].round(), asize[1].round());
+                let width = if frames.count() > 4 {
+                    width / 3.0
+                } else if frames.count() > 1 {
+                    width / 2.0
+                } else {
+                    width
+                } as u32;
+                let height = if frames.count() > 2 {
+                    height / 2.0
+                } else {
+                    height
+                } as u32;
+
+                egui::Grid::new("frames").show(ui, |ui| {
+                    // Color frames (single one)
+                    let color_frames = frames.frames_of_type::<realsense_rust::frame::ColorFrame>();
+                    let color_frame = &color_frames[0];
+                    let img = color_frame_to_rgb_img(color_frame);
+                    let img = image::DynamicImage::ImageRgb8(img);
+                    let img = img
+                        .resize_exact(width, height, image::imageops::FilterType::Lanczos3)
+                        .to_rgb8();
+                    let img = egui::ColorImage::from_rgb(
+                        [width as usize, height as usize],
+                        img.as_raw(),
+                    );
+                    ui.vertical(|ui| {
+                        let texture = egui_ctx.load_texture("color_frame", img, Default::default());
+                        ui.image(&texture);
+                        let ts = color_frame.timestamp();
+                        let ts_domain = color_frame.timestamp_domain().as_str();
+                        ui.label(format!("ts ({ts_domain}): {ts}"));
+                    });
+
+                    // IR frame
+                    let ir_frames = frames.frames_of_type::<realsense_rust::frame::InfraredFrame>();
+                    for ir_frame in ir_frames {
+                        let img = infrared_frame_to_rgb_img(&ir_frame);
+                        let img = image::DynamicImage::ImageRgb8(img);
+                        let img = img
+                            .resize_exact(width, height, image::imageops::FilterType::Lanczos3)
+                            .to_rgb8();
+                        let img = egui::ColorImage::from_rgb(
+                            [width as usize, height as usize],
+                            img.as_raw(),
+                        );
+                        ui.vertical(|ui| {
+                            let texture = egui_ctx.load_texture("color_frame", img, Default::default());
+                            ui.image(&texture);
+                            let ts = ir_frame.timestamp();
+                            let ts_domain = ir_frame.timestamp_domain().as_str();
+                            ui.label(format!("ts ({ts_domain}): {ts}"));
+                        });
+                    }
+
+                });
             }
         });
     }
