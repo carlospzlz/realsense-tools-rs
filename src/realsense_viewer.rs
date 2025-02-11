@@ -126,7 +126,7 @@ impl MyApp {
 
     fn get_frames(&mut self) -> Option<realsense_rust::frame::CompositeFrame> {
         if let Some(pipeline) = &mut self.pipeline {
-            let timeout = Duration::from_millis(200);
+            let timeout = Duration::from_millis(20);
             match pipeline.wait(Some(timeout)) {
                 Ok(frames) => {
                     self.warning = None;
@@ -177,12 +177,15 @@ impl MyApp {
                         .to_rgb8();
                     let img =
                         egui::ColorImage::from_rgb([width as usize, height as usize], img.as_raw());
-                    ui.vertical(|ui| {
-                        let texture = egui_ctx.load_texture("color_frame", img, Default::default());
-                        ui.image(&texture);
-                        let ts = color_frame.timestamp();
-                        let ts_domain = color_frame.timestamp_domain().as_str();
-                        ui.label(format!("ts ({ts_domain}): {ts}"));
+                    egui::Frame::canvas(ui.style()).show(ui, |ui| {
+                        ui.vertical(|ui| {
+                            let texture =
+                                egui_ctx.load_texture("color_frame", img, Default::default());
+                            ui.image(&texture);
+                            let ts = color_frame.timestamp();
+                            let ts_domain = color_frame.timestamp_domain().as_str();
+                            ui.label(format!("ts ({ts_domain}): {ts}"));
+                        });
                     });
 
                     // IR frame
@@ -197,13 +200,15 @@ impl MyApp {
                             [width as usize, height as usize],
                             img.as_raw(),
                         );
-                        ui.vertical(|ui| {
-                            let texture =
-                                egui_ctx.load_texture("color_frame", img, Default::default());
-                            ui.image(&texture);
-                            let ts = ir_frame.timestamp();
-                            let ts_domain = ir_frame.timestamp_domain().as_str();
-                            ui.label(format!("ts ({ts_domain}): {ts}"));
+                        egui::Frame::canvas(ui.style()).show(ui, |ui| {
+                            ui.vertical(|ui| {
+                                let texture =
+                                    egui_ctx.load_texture("color_frame", img, Default::default());
+                                ui.image(&texture);
+                                let ts = ir_frame.timestamp();
+                                let ts_domain = ir_frame.timestamp_domain().as_str();
+                                ui.label(format!("ts ({ts_domain}): {ts}"));
+                            });
                         });
                     }
                 });
