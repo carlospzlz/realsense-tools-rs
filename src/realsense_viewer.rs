@@ -1,5 +1,4 @@
 use eframe::egui;
-use realsense_rust::frame::FrameEx;
 use std::collections::HashSet;
 use std::ffi::CString;
 use std::time::Duration;
@@ -30,6 +29,7 @@ struct MyApp {
     color_stream_enabled: bool,
     infrared_0_stream_enabled: bool,
     infrared_1_stream_enabled: bool,
+    global_time_enabled: bool,
 }
 
 impl MyApp {
@@ -46,6 +46,7 @@ impl MyApp {
             color_stream_enabled: false,
             infrared_0_stream_enabled: false,
             infrared_1_stream_enabled: false,
+            global_time_enabled: false,
         }
     }
 }
@@ -107,6 +108,7 @@ impl MyApp {
 
         let new_serial_number = CString::new(new_serial_number).expect("Failed to create CString");
         self.pipeline = self.create_pipeline(&new_serial_number);
+        self.update_sensors();
         self.warning = None;
     }
 
@@ -146,6 +148,7 @@ impl MyApp {
                 .expect("Failed to start pipeline");
 
             self.pipeline = Some(pipeline);
+            self.update_sensors();
         }
     }
 
@@ -230,6 +233,19 @@ impl MyApp {
         config
     }
 
+    fn update_sensors(&mut self) {
+        if let Some(pipeline) = &self.pipeline {
+            for mut sensor in pipeline.profile().device().sensors() {
+                if sensor.supports_option(realsense_rust::kind::Rs2Option::GlobalTimeEnabled) {
+                    let val = if self.global_time_enabled { 1.0 } else { 0.0 };
+                    sensor
+                        .set_option(realsense_rust::kind::Rs2Option::GlobalTimeEnabled, val)
+                        .expect("Failed to set option");
+                }
+            }
+        }
+    }
+
     fn get_frames(&mut self) -> Option<realsense_rust::frame::CompositeFrame> {
         if let Some(pipeline) = &mut self.pipeline {
             let timeout = Duration::from_millis(20);
@@ -272,33 +288,23 @@ impl MyApp {
                 } else {
                     height
                 } - 25.0) as u32;
+                let size = (width, height);
 
-                let mut frame_count = 0;
+                let mut frame_count = 1 as u8;
+                let columns = if frames.count() > 4 {
+                    3
+                } else if frames.count() > 1 {
+                    2
+                } else {
+                    1
+                };
 
                 egui::Grid::new("frames").show(ui, |ui| {
-                    // TODO: Make these 3 blocks of code one, templated fn?
                     // Depth frames (either 0 or 1)
                     let depth_frames = frames.frames_of_type::<realsense_rust::frame::DepthFrame>();
                     for depth_frame in depth_frames {
                         let img = depth_frame_to_rgb_img(&depth_frame);
-                        let img = image::DynamicImage::ImageRgb8(img);
-                        let img = img
-                            .resize_exact(width, height, image::imageops::FilterType::Lanczos3)
-                            .to_rgb8();
-                        let img = egui::ColorImage::from_rgb(
-                            [width as usize, height as usize],
-                            img.as_raw(),
-                        );
-                        egui::Frame::canvas(ui.style()).show(ui, |ui| {
-                            ui.vertical(|ui| {
-                                let texture =
-                                    egui_ctx.load_texture("depth_frame", img, Default::default());
-                                ui.image(&texture);
-                                let ts = depth_frame.timestamp();
-                                let ts_domain = depth_frame.timestamp_domain().as_str();
-                                ui.label(format!("ts ({ts_domain}): {ts}"));
-                            });
-                        });
+                        self.add_frame_item(egui_ctx, ui, img, size, depth_frame);
                         frame_count += 1;
                     }
 
@@ -306,58 +312,19 @@ impl MyApp {
                     let color_frames = frames.frames_of_type::<realsense_rust::frame::ColorFrame>();
                     for color_frame in color_frames {
                         let img = color_frame_to_rgb_img(&color_frame);
-                        let img = image::DynamicImage::ImageRgb8(img);
-                        let img = img
-                            .resize_exact(width, height, image::imageops::FilterType::Lanczos3)
-                            .to_rgb8();
-                        let img = egui::ColorImage::from_rgb(
-                            [width as usize, height as usize],
-                            img.as_raw(),
-                        );
-                        egui::Frame::canvas(ui.style()).show(ui, |ui| {
-                            ui.vertical(|ui| {
-                                let texture =
-                                    egui_ctx.load_texture("color_frame", img, Default::default());
-                                ui.image(&texture);
-                                let ts = color_frame.timestamp();
-                                let ts_domain = color_frame.timestamp_domain().as_str();
-                                ui.label(format!("ts ({ts_domain}): {ts}"));
-                            });
-                        });
-                        if frame_count == 1 && frames.count() < 5 {
+                        self.add_frame_item(egui_ctx, ui, img, size, color_frame);
+                        if frame_count % columns == 0 {
                             ui.end_row();
                         }
                         frame_count += 1;
                     }
 
-                    // IR frames (either 0 or 2)
+                    // IR frames (0, 1 or 2)
                     let ir_frames = frames.frames_of_type::<realsense_rust::frame::InfraredFrame>();
                     for ir_frame in ir_frames {
                         let img = infrared_frame_to_rgb_img(&ir_frame);
-                        let img = image::DynamicImage::ImageRgb8(img);
-                        let img = img
-                            .resize_exact(width, height, image::imageops::FilterType::Lanczos3)
-                            .to_rgb8();
-                        let img = egui::ColorImage::from_rgb(
-                            [width as usize, height as usize],
-                            img.as_raw(),
-                        );
-                        egui::Frame::canvas(ui.style()).show(ui, |ui| {
-                            ui.vertical(|ui| {
-                                let texture = egui_ctx.load_texture(
-                                    "infrared_frame",
-                                    img,
-                                    Default::default(),
-                                );
-                                ui.image(&texture);
-                                let ts = ir_frame.timestamp();
-                                let ts_domain = ir_frame.timestamp_domain().as_str();
-                                ui.label(format!("ts ({ts_domain}): {ts}"));
-                            });
-                        });
-                        if (frame_count == 1 && frames.count() < 5)
-                            || (frame_count == 2 && frames.count() > 4)
-                        {
+                        self.add_frame_item(egui_ctx, ui, img, size, ir_frame);
+                        if frame_count % columns == 0 {
                             ui.end_row();
                         }
                         frame_count += 1;
@@ -367,11 +334,36 @@ impl MyApp {
         });
     }
 
+    fn add_frame_item<T: realsense_rust::frame::FrameEx>(
+        &mut self,
+        egui_ctx: &egui::Context,
+        ui: &mut egui::Ui,
+        img: image::RgbImage,
+        size: (u32, u32),
+        frame: T,
+    ) {
+        let img = image::DynamicImage::ImageRgb8(img);
+        let img = img
+            .resize_exact(size.0, size.1, image::imageops::FilterType::Lanczos3)
+            .to_rgb8();
+        let img = egui::ColorImage::from_rgb([size.0 as usize, size.1 as usize], img.as_raw());
+        egui::Frame::canvas(ui.style()).show(ui, |ui| {
+            ui.vertical(|ui| {
+                let texture = egui_ctx.load_texture("unnamed", img, Default::default());
+                ui.image(&texture);
+                let ts = frame.timestamp();
+                let ts_domain = frame.timestamp_domain().as_str();
+                ui.label(format!("{ts_domain}: {ts}"));
+            });
+        });
+    }
+
     fn left_panel(&mut self, egui_ctx: &egui::Context) {
         egui::SidePanel::left("left_panel").show(egui_ctx, |ui| {
+            ui.horizontal(|_ui| {});
+            ui.label("Streams");
+            ui.horizontal(|_ui| {});
             egui::Grid::new("streams").show(ui, |ui| {
-                ui.label("Streams");
-                ui.end_row();
                 ui.label("Depth");
                 if ui.checkbox(&mut self.depth_stream_enabled, "").clicked() {
                     self.update_current_pipeline();
@@ -416,6 +408,18 @@ impl MyApp {
                 ui.label("Confidence");
                 ui.checkbox(&mut self.color_stream_enabled, "");
                 ui.end_row();
+            });
+            ui.horizontal(|_ui| {});
+            ui.horizontal(|ui| {
+                ui.label("Sensors");
+                let separator = egui::Separator::default();
+                ui.add(separator.horizontal());
+            });
+            egui::Grid::new("sensors").show(ui, |ui| {
+                ui.label("Global Time");
+                if ui.checkbox(&mut self.global_time_enabled, "").clicked() {
+                    self.update_sensors();
+                }
             });
         });
     }
