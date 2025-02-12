@@ -30,6 +30,8 @@ struct MyApp {
     infrared_0_stream_enabled: bool,
     infrared_1_stream_enabled: bool,
     global_time_enabled: bool,
+    emitter_enabled: bool,
+    auto_exposure_enabled: bool,
 }
 
 impl MyApp {
@@ -47,6 +49,8 @@ impl MyApp {
             infrared_0_stream_enabled: false,
             infrared_1_stream_enabled: false,
             global_time_enabled: false,
+            emitter_enabled: false,
+            auto_exposure_enabled: false,
         }
     }
 }
@@ -242,6 +246,18 @@ impl MyApp {
                         .set_option(realsense_rust::kind::Rs2Option::GlobalTimeEnabled, val)
                         .expect("Failed to set option");
                 }
+                if sensor.supports_option(realsense_rust::kind::Rs2Option::EmitterEnabled) {
+                    let val = if self.emitter_enabled { 1.0 } else { 0.0 };
+                    sensor
+                        .set_option(realsense_rust::kind::Rs2Option::EmitterEnabled, val)
+                        .expect("Failed to set option");
+                }
+                if sensor.supports_option(realsense_rust::kind::Rs2Option::EnableAutoExposure) {
+                    let val = if self.auto_exposure_enabled { 1.0 } else { 0.0 };
+                    sensor
+                        .set_option(realsense_rust::kind::Rs2Option::EnableAutoExposure, val)
+                        .expect("Failed to set option");
+                }
             }
         }
     }
@@ -418,6 +434,16 @@ impl MyApp {
             egui::Grid::new("sensors").show(ui, |ui| {
                 ui.label("Global Time");
                 if ui.checkbox(&mut self.global_time_enabled, "").clicked() {
+                    self.update_sensors();
+                }
+                ui.end_row();
+                ui.label("Emitter");
+                if ui.checkbox(&mut self.emitter_enabled, "").clicked() {
+                    self.update_sensors();
+                }
+                ui.end_row();
+                ui.label("Auto Exposure");
+                if ui.checkbox(&mut self.auto_exposure_enabled, "").clicked() {
                     self.update_sensors();
                 }
             });
