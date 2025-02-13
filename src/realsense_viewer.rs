@@ -61,6 +61,9 @@ impl MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, egui_ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Reset warning
+        self.warning = None;
+
         // Check selected camera and update pipeline if needed
         let devices = self.realsense_ctx.query_devices(HashSet::new());
         self.update_pipeline_for_selected_device(&devices);
@@ -117,7 +120,6 @@ impl MyApp {
         let new_serial_number = CString::new(new_serial_number).expect("Failed to create CString");
         self.pipeline = self.create_pipeline(&new_serial_number);
         self.update_sensors();
-        self.warning = None;
     }
 
     fn create_pipeline(
@@ -305,7 +307,6 @@ impl MyApp {
             let timeout = Duration::from_millis(20);
             match pipeline.wait(Some(timeout)) {
                 Ok(frames) => {
-                    self.warning = None;
                     Some(frames)
                 }
                 Err(e) => {
