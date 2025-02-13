@@ -383,22 +383,22 @@ impl MyApp {
                         frame_count += 1;
                     }
 
-                    // Accel frames (either 0 or 1)
-                    let accel_frames = frames.frames_of_type::<realsense_rust::frame::AccelFrame>();
-                    for accel_frame in accel_frames {
-                        let accel = accel_frame.acceleration();
-                        self.add_motion_frame_item(ui, *accel, size, accel_frame);
+                    // Gyro frames (either 0 or 1)
+                    let gyro_frames = frames.frames_of_type::<realsense_rust::frame::GyroFrame>();
+                    for gyro_frame in gyro_frames {
+                        let rot_velocity = gyro_frame.rotational_velocity();
+                        self.add_motion_frame_item(ui, *rot_velocity, size, 0.5, gyro_frame);
                         if frame_count % columns == 0 {
                             ui.end_row();
                         }
                         frame_count += 1;
                     }
 
-                    // Gyro frames (either 0 or 1)
-                    let gyro_frames = frames.frames_of_type::<realsense_rust::frame::GyroFrame>();
-                    for gyro_frame in gyro_frames {
-                        let rot_velocity = gyro_frame.rotational_velocity();
-                        self.add_motion_frame_item(ui, *rot_velocity, size, gyro_frame);
+                    // Accel frames (either 0 or 1)
+                    let accel_frames = frames.frames_of_type::<realsense_rust::frame::AccelFrame>();
+                    for accel_frame in accel_frames {
+                        let accel = accel_frame.acceleration();
+                        self.add_motion_frame_item(ui, *accel, size, 0.1, accel_frame);
                         if frame_count % columns == 0 {
                             ui.end_row();
                         }
@@ -438,16 +438,53 @@ impl MyApp {
         ui: &mut egui::Ui,
         data: [f32; 3],
         size: (u32, u32),
+        scale: f32,
         frame: T,
     ) {
         egui::Frame::canvas(ui.style()).show(ui, |ui| {
             ui.vertical(|ui| {
-                let (rect, _response) = ui.allocate_at_least(
-                    egui::vec2(size.0 as f32, (size.1 - 21) as f32),
+                // Account for motion values
+                let size = (size.0, size.1 - 21);
+                let (area, _response) = ui.allocate_at_least(
+                    egui::vec2(size.0 as f32, size.1 as f32),
                     egui::Sense::hover(),
                 );
                 let painter = ui.painter();
-                painter.rect_filled(rect, 0.0, egui::Color32::DARK_GRAY);
+                painter.rect_filled(area, 0.0, egui::Color32::BLACK);
+                let colors = [
+                    egui::Color32::RED,
+                    egui::Color32::GREEN,
+                    egui::Color32::BLUE,
+                ];
+                let bar_width = size.0 as f32 / 7.0;
+                let bar_max_height = size.1 as f32 / 2.0;
+                let mut left_corner =
+                    egui::Pos2::new(area.min.x + bar_width, area.min.y + bar_max_height);
+                for (component, color) in data.into_iter().zip(colors.into_iter()) {
+                    // Positive values grow downwards. Reverse it
+                    let height = -component * bar_max_height * scale;
+                    // Clamp to limits of area's height
+                    let height = f32::min(f32::max(height, -bar_max_height), bar_max_height);
+                    let right_corner =
+                        egui::Pos2::new(left_corner.x + bar_width, left_corner.y + height);
+                    painter.rect_filled(
+                        egui::Rect::from_two_pos(left_corner, right_corner),
+                        2.0,
+                        color,
+                    );
+                    left_corner.x = left_corner.x + bar_width * 2.0;
+                }
+                // Horizontal line at origin
+                let thickness = 0.5;
+                let y = area.min.y + size.1 as f32 / 2.0;
+                let left_corner = egui::Pos2::new(area.min.x, y - thickness / 2.0);
+                let right_corner = egui::Pos2::new(area.max.x, y + thickness / 2.0);
+                painter.rect_filled(
+                    egui::Rect::from_two_pos(left_corner, right_corner),
+                    0.0,
+                    egui::Color32::DARK_GRAY,
+                );
+
                 ui.horizontal(|ui| {
                     ui.label(format!("X: {:>6.2}", data[0]));
                     ui.label(format!("Y: {:>6.2}", data[1]));
