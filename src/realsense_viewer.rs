@@ -10,7 +10,7 @@ fn main() -> Result<(), eframe::Error> {
         realsense_rust::context::Context::new().expect("Failed to create RealSense context");
 
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([750.0, 550.0]),
+        viewport: egui::ViewportBuilder::default().with_inner_size([960.0, 550.0]),
         ..Default::default()
     };
     eframe::run_native(
@@ -48,13 +48,13 @@ impl MyApp {
             pipeline: None,
             depth_stream_enabled: true,
             color_stream_enabled: true,
-            infrared_0_stream_enabled: false,
-            infrared_1_stream_enabled: false,
+            infrared_0_stream_enabled: true,
+            infrared_1_stream_enabled: true,
             accel_stream_enabled: true,
             gyro_stream_enabled: true,
-            global_time_enabled: false,
-            emitter_enabled: false,
-            auto_exposure_enabled: false,
+            global_time_enabled: true,
+            emitter_enabled: true,
+            auto_exposure_enabled: true,
         }
     }
 }
@@ -443,7 +443,7 @@ impl MyApp {
         egui::Frame::canvas(ui.style()).show(ui, |ui| {
             ui.vertical(|ui| {
                 let (rect, _response) = ui.allocate_at_least(
-                    egui::vec2(size.0 as f32, (size.1 - 25) as f32),
+                    egui::vec2(size.0 as f32, (size.1 - 21) as f32),
                     egui::Sense::hover(),
                 );
                 let painter = ui.painter();
@@ -462,10 +462,10 @@ impl MyApp {
 
     fn left_panel(&mut self, egui_ctx: &egui::Context) {
         egui::SidePanel::left("left_panel").show(egui_ctx, |ui| {
-            ui.horizontal(|_ui| {});
-            ui.label("Streams");
-            ui.horizontal(|_ui| {});
             egui::Grid::new("streams").show(ui, |ui| {
+                ui.end_row();
+                ui.label("Streams");
+                ui.end_row();
                 ui.label("Depth");
                 if ui.checkbox(&mut self.depth_stream_enabled, "").clicked() {
                     self.update_current_pipeline();
@@ -492,9 +492,6 @@ impl MyApp {
                     self.update_current_pipeline();
                 }
                 ui.end_row();
-                ui.label("Fisheye");
-                ui.checkbox(&mut self.color_stream_enabled, "");
-                ui.end_row();
                 ui.label("Gyro");
                 if ui.checkbox(&mut self.gyro_stream_enabled, "").clicked() {
                     self.update_current_pipeline();
@@ -505,23 +502,9 @@ impl MyApp {
                     self.update_current_pipeline();
                 }
                 ui.end_row();
-                ui.label("Gpio");
-                ui.checkbox(&mut self.color_stream_enabled, "");
                 ui.end_row();
-                ui.label("Pose");
-                ui.checkbox(&mut self.color_stream_enabled, "");
-                ui.end_row();
-                ui.label("Confidence");
-                ui.checkbox(&mut self.color_stream_enabled, "");
-                ui.end_row();
-            });
-            ui.horizontal(|_ui| {});
-            ui.horizontal(|ui| {
                 ui.label("Sensors");
-                let separator = egui::Separator::default();
-                ui.add(separator.horizontal());
-            });
-            egui::Grid::new("sensors").show(ui, |ui| {
+                ui.end_row();
                 ui.label("Global Time");
                 if ui.checkbox(&mut self.global_time_enabled, "").clicked() {
                     self.update_sensors();
