@@ -306,9 +306,7 @@ impl MyApp {
         if let Some(pipeline) = &mut self.pipeline {
             let timeout = Duration::from_millis(20);
             match pipeline.wait(Some(timeout)) {
-                Ok(frames) => {
-                    Some(frames)
-                }
+                Ok(frames) => Some(frames),
                 Err(e) => {
                     self.warning = Some(format!("{e}"));
                     None
@@ -359,7 +357,7 @@ impl MyApp {
                     let depth_frames = frames.frames_of_type::<realsense_rust::frame::DepthFrame>();
                     for depth_frame in depth_frames {
                         let img = depth_frame_to_rgb_img(&depth_frame);
-                        self.add_frame_item(egui_ctx, ui, img, size, depth_frame);
+                        self.add_image_frame_item(egui_ctx, ui, img, size, depth_frame);
                         frame_count += 1;
                     }
 
@@ -367,7 +365,7 @@ impl MyApp {
                     let color_frames = frames.frames_of_type::<realsense_rust::frame::ColorFrame>();
                     for color_frame in color_frames {
                         let img = color_frame_to_rgb_img(&color_frame);
-                        self.add_frame_item(egui_ctx, ui, img, size, color_frame);
+                        self.add_image_frame_item(egui_ctx, ui, img, size, color_frame);
                         if frame_count % columns == 0 {
                             ui.end_row();
                         }
@@ -378,61 +376,40 @@ impl MyApp {
                     let ir_frames = frames.frames_of_type::<realsense_rust::frame::InfraredFrame>();
                     for ir_frame in ir_frames {
                         let img = infrared_frame_to_rgb_img(&ir_frame);
-                        self.add_frame_item(egui_ctx, ui, img, size, ir_frame);
+                        self.add_image_frame_item(egui_ctx, ui, img, size, ir_frame);
                         if frame_count % columns == 0 {
                             ui.end_row();
                         }
                         frame_count += 1;
                     }
 
-                    // TODO: Create functions
                     // Accel frames (either 0 or 1)
                     let accel_frames = frames.frames_of_type::<realsense_rust::frame::AccelFrame>();
                     for accel_frame in accel_frames {
-                        egui::Frame::canvas(ui.style()).show(ui, |ui| {
-                            ui.vertical(|ui| {
-                                let (rect, _response) = ui.allocate_at_least(
-                                    egui::vec2(size.0 as f32, size.1 as f32),
-                                    egui::Sense::hover(),
-                                );
-                                let painter = ui.painter();
-                                painter.rect_filled(rect, 0.0, egui::Color32::DARK_GRAY);
-                                let accel = accel_frame.acceleration();
-                                ui.horizontal(|ui| {
-                                    ui.label(format!("X: {:>6.2}", accel[0]));
-                                    ui.label(format!("Y: {:>6.2}", accel[1]));
-                                    ui.label(format!("Z: {:>6.2}", accel[2]));
-                                });
-                            });
-                        });
+                        let accel = accel_frame.acceleration();
+                        self.add_motion_frame_item(ui, *accel, size, accel_frame);
+                        if frame_count % columns == 0 {
+                            ui.end_row();
+                        }
+                        frame_count += 1;
                     }
 
                     // Gyro frames (either 0 or 1)
                     let gyro_frames = frames.frames_of_type::<realsense_rust::frame::GyroFrame>();
                     for gyro_frame in gyro_frames {
-                        egui::Frame::canvas(ui.style()).show(ui, |ui| {
-                            ui.vertical(|ui| {
-                                let (rect, _response) = ui.allocate_at_least(
-                                    egui::vec2(size.0 as f32, size.1 as f32),
-                                    egui::Sense::hover(),
-                                );
-                                let painter = ui.painter();
-                                painter.rect_filled(rect, 0.0, egui::Color32::DARK_GRAY);
-                                let rot_velocity = gyro_frame.rotational_velocity();
-                                ui.horizontal(|ui| {
-                                    ui.label(format!("X: {:>6.2}", rot_velocity[0]));
-                                    ui.label(format!("Y: {:>6.2}", rot_velocity[1]));
-                                    ui.label(format!("Z: {:>6.2}", rot_velocity[2]));
-                                });
-                            });
-                        });
+                        let rot_velocity = gyro_frame.rotational_velocity();
+                        self.add_motion_frame_item(ui, *rot_velocity, size, gyro_frame);
+                        if frame_count % columns == 0 {
+                            ui.end_row();
+                        }
+                        frame_count += 1;
                     }
                 });
             }
         });
     }
 
-    fn add_frame_item<T: realsense_rust::frame::FrameEx>(
+    fn add_image_frame_item<T: realsense_rust::frame::FrameEx>(
         &mut self,
         egui_ctx: &egui::Context,
         ui: &mut egui::Ui,
@@ -449,6 +426,33 @@ impl MyApp {
             ui.vertical(|ui| {
                 let texture = egui_ctx.load_texture("unnamed", img, Default::default());
                 ui.image(&texture);
+                let ts = frame.timestamp();
+                let ts_domain = frame.timestamp_domain().as_str();
+                ui.label(format!("{ts_domain}: {ts:.2}"));
+            });
+        });
+    }
+
+    fn add_motion_frame_item<T: realsense_rust::frame::FrameEx>(
+        &mut self,
+        ui: &mut egui::Ui,
+        data: [f32; 3],
+        size: (u32, u32),
+        frame: T,
+    ) {
+        egui::Frame::canvas(ui.style()).show(ui, |ui| {
+            ui.vertical(|ui| {
+                let (rect, _response) = ui.allocate_at_least(
+                    egui::vec2(size.0 as f32, (size.1 - 25) as f32),
+                    egui::Sense::hover(),
+                );
+                let painter = ui.painter();
+                painter.rect_filled(rect, 0.0, egui::Color32::DARK_GRAY);
+                ui.horizontal(|ui| {
+                    ui.label(format!("X: {:>6.2}", data[0]));
+                    ui.label(format!("Y: {:>6.2}", data[1]));
+                    ui.label(format!("Z: {:>6.2}", data[2]));
+                });
                 let ts = frame.timestamp();
                 let ts_domain = frame.timestamp_domain().as_str();
                 ui.label(format!("{ts_domain}: {ts:.2}"));
