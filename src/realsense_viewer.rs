@@ -29,6 +29,8 @@ struct MyApp {
     color_stream_enabled: bool,
     infrared_0_stream_enabled: bool,
     infrared_1_stream_enabled: bool,
+    accel_stream_enabled: bool,
+    gyro_stream_enabled: bool,
     global_time_enabled: bool,
     emitter_enabled: bool,
     auto_exposure_enabled: bool,
@@ -44,10 +46,12 @@ impl MyApp {
             dev_index: 0,
             warning: None,
             pipeline: None,
-            depth_stream_enabled: false,
-            color_stream_enabled: false,
+            depth_stream_enabled: true,
+            color_stream_enabled: true,
             infrared_0_stream_enabled: false,
             infrared_1_stream_enabled: false,
+            accel_stream_enabled: true,
+            gyro_stream_enabled: true,
             global_time_enabled: false,
             emitter_enabled: false,
             auto_exposure_enabled: false,
@@ -234,6 +238,40 @@ impl MyApp {
                 .expect("Failed to disable IR1 stream");
         }
 
+        if self.gyro_stream_enabled {
+            config
+                .enable_stream(
+                    realsense_rust::kind::Rs2StreamKind::Gyro,
+                    None,
+                    0,
+                    0,
+                    realsense_rust::kind::Rs2Format::Any,
+                    0,
+                )
+                .expect("Failed to enable gyro stream");
+        } else {
+            config
+                .disable_stream(realsense_rust::kind::Rs2StreamKind::Gyro)
+                .expect("Failed to disable gyro stream");
+        }
+
+        if self.accel_stream_enabled {
+            config
+                .enable_stream(
+                    realsense_rust::kind::Rs2StreamKind::Accel,
+                    None,
+                    0,
+                    0,
+                    realsense_rust::kind::Rs2Format::Any,
+                    0,
+                )
+                .expect("Failed to enable accel stream");
+        } else {
+            config
+                .disable_stream(realsense_rust::kind::Rs2StreamKind::Accel)
+                .expect("Failed to disable accel stream");
+        }
+
         config
     }
 
@@ -345,6 +383,49 @@ impl MyApp {
                         }
                         frame_count += 1;
                     }
+
+                    // TODO: Create functions
+                    // Accel frames (either 0 or 1)
+                    let accel_frames = frames.frames_of_type::<realsense_rust::frame::AccelFrame>();
+                    for accel_frame in accel_frames {
+                        egui::Frame::canvas(ui.style()).show(ui, |ui| {
+                            ui.vertical(|ui| {
+                                let (rect, _response) = ui.allocate_at_least(
+                                    egui::vec2(size.0 as f32, size.1 as f32),
+                                    egui::Sense::hover(),
+                                );
+                                let painter = ui.painter();
+                                painter.rect_filled(rect, 0.0, egui::Color32::DARK_GRAY);
+                                let accel = accel_frame.acceleration();
+                                ui.horizontal(|ui| {
+                                    ui.label(format!("X: {:>6.2}", accel[0]));
+                                    ui.label(format!("Y: {:>6.2}", accel[1]));
+                                    ui.label(format!("Z: {:>6.2}", accel[2]));
+                                });
+                            });
+                        });
+                    }
+
+                    // Gyro frames (either 0 or 1)
+                    let gyro_frames = frames.frames_of_type::<realsense_rust::frame::GyroFrame>();
+                    for gyro_frame in gyro_frames {
+                        egui::Frame::canvas(ui.style()).show(ui, |ui| {
+                            ui.vertical(|ui| {
+                                let (rect, _response) = ui.allocate_at_least(
+                                    egui::vec2(size.0 as f32, size.1 as f32),
+                                    egui::Sense::hover(),
+                                );
+                                let painter = ui.painter();
+                                painter.rect_filled(rect, 0.0, egui::Color32::DARK_GRAY);
+                                let rot_velocity = gyro_frame.rotational_velocity();
+                                ui.horizontal(|ui| {
+                                    ui.label(format!("X: {:>6.2}", rot_velocity[0]));
+                                    ui.label(format!("Y: {:>6.2}", rot_velocity[1]));
+                                    ui.label(format!("Z: {:>6.2}", rot_velocity[2]));
+                                });
+                            });
+                        });
+                    }
                 });
             }
         });
@@ -369,7 +450,7 @@ impl MyApp {
                 ui.image(&texture);
                 let ts = frame.timestamp();
                 let ts_domain = frame.timestamp_domain().as_str();
-                ui.label(format!("{ts_domain}: {ts}"));
+                ui.label(format!("{ts_domain}: {ts:.2}"));
             });
         });
     }
@@ -410,10 +491,14 @@ impl MyApp {
                 ui.checkbox(&mut self.color_stream_enabled, "");
                 ui.end_row();
                 ui.label("Gyro");
-                ui.checkbox(&mut self.color_stream_enabled, "");
+                if ui.checkbox(&mut self.gyro_stream_enabled, "").clicked() {
+                    self.update_current_pipeline();
+                }
                 ui.end_row();
                 ui.label("Accel");
-                ui.checkbox(&mut self.color_stream_enabled, "");
+                if ui.checkbox(&mut self.accel_stream_enabled, "").clicked() {
+                    self.update_current_pipeline();
+                }
                 ui.end_row();
                 ui.label("Gpio");
                 ui.checkbox(&mut self.color_stream_enabled, "");
