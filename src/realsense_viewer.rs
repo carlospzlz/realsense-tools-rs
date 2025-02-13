@@ -284,19 +284,19 @@ impl MyApp {
                     let val = if self.global_time_enabled { 1.0 } else { 0.0 };
                     sensor
                         .set_option(realsense_rust::kind::Rs2Option::GlobalTimeEnabled, val)
-                        .expect("Failed to set option");
+                        .expect("Failed to set option: GlobalTimeEnabled");
                 }
                 if sensor.supports_option(realsense_rust::kind::Rs2Option::EmitterEnabled) {
                     let val = if self.emitter_enabled { 1.0 } else { 0.0 };
                     sensor
                         .set_option(realsense_rust::kind::Rs2Option::EmitterEnabled, val)
-                        .expect("Failed to set option");
+                        .expect("Failed to set option: EmitterEnabled");
                 }
                 if sensor.supports_option(realsense_rust::kind::Rs2Option::EnableAutoExposure) {
                     let val = if self.auto_exposure_enabled { 1.0 } else { 0.0 };
                     sensor
                         .set_option(realsense_rust::kind::Rs2Option::EnableAutoExposure, val)
-                        .expect("Failed to set option");
+                        .expect("Failed to set option: EnableAutoExposure");
                 }
             }
         }
