@@ -470,7 +470,7 @@ impl MyApp {
                     // Positive values grow downwards. Reverse it
                     let height = -component * bar_max_height * scale;
                     // Clamp to limits of area's height
-                    let height = f32::min(f32::max(height, -bar_max_height), bar_max_height);
+                    let height = height.clamp(-bar_max_height, bar_max_height);
                     let right_corner =
                         egui::Pos2::new(left_corner.x + bar_width, left_corner.y + height);
                     painter.rect_filled(
@@ -713,15 +713,36 @@ fn infrared_frame_to_rgb_img(frame: &realsense_rust::frame::InfraredFrame) -> im
 
 ///
 fn depth_frame_to_rgb_img(frame: &realsense_rust::frame::DepthFrame) -> image::RgbImage {
+    let mut max_value = 0 as u16;
+    for pixel in frame.iter() {
+        match pixel {
+            realsense_rust::frame::PixelKind::Z16 { depth } => {
+                if *depth > max_value {
+                    max_value = *depth;
+                }
+            }
+            _ => panic!("Depth type is wrong"),
+        }
+    }
+
     let mut img = image::RgbImage::new(frame.width() as u32, frame.height() as u32);
     for (x, y, pixel) in img.enumerate_pixels_mut() {
         match frame.get_unchecked(x as usize, y as usize) {
             realsense_rust::frame::PixelKind::Z16 { depth } => {
-                let val = (depth / 256) as u8;
-                *pixel = image::Rgb([val, val, val]);
+                let normalized = *depth as f32 / max_value as f32;
+                *pixel = jet_colormap(normalized);
             }
-            _ => panic!("Color type is wrong!"),
+            _ => panic!("Depth type is wrong!"),
         }
     }
     img
+}
+
+///
+fn jet_colormap(value: f32) -> image::Rgb<u8> {
+    let v = value.clamp(0.0, 1.0) * 4.0;
+    let r = ((v - 1.5).clamp(0.0, 1.0) * 255.0) as u8;
+    let g = ((2.0 - (v - 1.5).abs()).clamp(0.0, 1.0) * 255.0) as u8;
+    let b = ((1.0 - (v - 1.5)).clamp(0.0, 1.0) * 255.0) as u8;
+    image::Rgb([r, g, b])
 }
