@@ -117,29 +117,16 @@ impl MyApp {
             }
         }
 
-        let new_serial_number = CString::new(new_serial_number).expect("Failed to create CString");
-        self.pipeline = self.create_pipeline(&new_serial_number);
-        self.update_sensors();
-    }
-
-    fn create_pipeline(
-        &mut self,
-        serial_number: &CString,
-    ) -> Option<realsense_rust::pipeline::ActivePipeline> {
-        let pipeline = if self.pipeline.is_some() {
+        let pipeline = if let Some(pipeline) = self.pipeline.take() {
             // ActivePipeline -> InactivePipeline
-            self.pipeline.take().unwrap().stop()
+            pipeline.stop()
         } else {
             realsense_rust::pipeline::InactivePipeline::try_from(&self.realsense_ctx)
-                .expect("Failed to create pipeline from context")
+                .expect("Failed to create inactive pipeline from context")
         };
 
-        let config = self.create_config(serial_number);
-        let pipeline = pipeline
-            .start(Some(config))
-            .expect("Failed to start pipeline");
-
-        Some(pipeline)
+        let new_serial_number = CString::new(new_serial_number).expect("Failed to create CString");
+        self.pipeline = self.start_pipeline(&new_serial_number, pipeline);
     }
 
     fn update_current_pipeline(&mut self) {
@@ -151,15 +138,34 @@ impl MyApp {
             let pipeline = pipeline.stop();
 
             let serial_number = CString::new(serial_number).expect("Failed to create CString");
-            let config = self.create_config(&serial_number);
-
-            let pipeline = pipeline
-                .start(Some(config))
-                .expect("Failed to start pipeline");
-
-            self.pipeline = Some(pipeline);
-            self.update_sensors();
+            self.pipeline = self.start_pipeline(&serial_number, pipeline);
         }
+    }
+
+    fn start_pipeline(
+        &mut self,
+        serial_number: &CString,
+        pipeline: realsense_rust::pipeline::InactivePipeline,
+    ) -> Option<realsense_rust::pipeline::ActivePipeline> {
+        if !self.depth_stream_enabled
+            && !self.color_stream_enabled
+            && !self.infrared_0_stream_enabled
+            && !self.infrared_1_stream_enabled
+            && !self.accel_stream_enabled
+            && !self.gyro_stream_enabled
+        {
+            self.warning = Some("We need at least one stream to start the pipeline".to_string());
+            return None;
+        }
+
+        let config = self.create_config(serial_number);
+        let pipeline = pipeline
+            .start(Some(config))
+            .expect("Failed to start pipeline");
+
+        self.update_sensors();
+
+        Some(pipeline)
     }
 
     /// Config is consumed by start(), we need to create one each time
@@ -575,6 +581,12 @@ impl MyApp {
                 };
                 ui.label(format!("{}", frames_count));
             });
+            if let Some(pipeline) = &self.pipeline {
+                for stream_profile in pipeline.profile().streams() {
+                    let kind = stream_profile.kind();
+                    ui.label(format!("{:?}", kind));
+                }
+            }
         });
     }
 
