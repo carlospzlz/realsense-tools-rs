@@ -713,23 +713,12 @@ fn infrared_frame_to_rgb_img(frame: &realsense_rust::frame::InfraredFrame) -> im
 
 ///
 fn depth_frame_to_rgb_img(frame: &realsense_rust::frame::DepthFrame) -> image::RgbImage {
-    let mut max_value = 0 as u16;
-    for pixel in frame.iter() {
-        match pixel {
-            realsense_rust::frame::PixelKind::Z16 { depth } => {
-                if *depth > max_value {
-                    max_value = *depth;
-                }
-            }
-            _ => panic!("Depth type is wrong"),
-        }
-    }
-
+    let max_value = 4000.0; // 4m
     let mut img = image::RgbImage::new(frame.width() as u32, frame.height() as u32);
     for (x, y, pixel) in img.enumerate_pixels_mut() {
         match frame.get_unchecked(x as usize, y as usize) {
             realsense_rust::frame::PixelKind::Z16 { depth } => {
-                let normalized = *depth as f32 / max_value as f32;
+                let normalized = *depth as f32 / max_value;
                 *pixel = jet_colormap(normalized);
             }
             _ => panic!("Depth type is wrong!"),
@@ -738,11 +727,36 @@ fn depth_frame_to_rgb_img(frame: &realsense_rust::frame::DepthFrame) -> image::R
     img
 }
 
-///
+/// Implement the classic jet color map
+/// Blue -> Cyan -> Yellow -> Red -> Black
 fn jet_colormap(value: f32) -> image::Rgb<u8> {
-    let v = value.clamp(0.0, 1.0) * 4.0;
-    let r = ((v - 1.5).clamp(0.0, 1.0) * 255.0) as u8;
-    let g = ((2.0 - (v - 1.5).abs()).clamp(0.0, 1.0) * 255.0) as u8;
-    let b = ((1.0 - (v - 1.5)).clamp(0.0, 1.0) * 255.0) as u8;
+    let v = value.clamp(0.0, 1.0);
+
+    let (r, g, b) = if v < 0.25 {
+        lerp_color(v, 0.00, (0, 0, 255), 0.25, (0, 255, 255)) // Blue → Cyan
+    } else if v < 0.5 {
+        lerp_color(v, 0.25, (0, 255, 255), 0.5, (255, 255, 0)) // Cyan → Yellow
+    } else if v < 0.75 {
+        lerp_color(v, 0.5, (255, 255, 0), 0.75, (255, 0, 0)) // Green → Yellow
+    } else {
+        lerp_color(v, 0.8, (255, 0, 0), 1.00, (0, 0, 0)) // Dark Red → Black
+    };
+
     image::Rgb([r, g, b])
+}
+
+/// Linearly interpolates between two colors based on value position.
+fn lerp_color(
+    value: f32,
+    v_min: f32,
+    c_min: (u8, u8, u8),
+    v_max: f32,
+    c_max: (u8, u8, u8),
+) -> (u8, u8, u8) {
+    let t = ((value - v_min) / (v_max - v_min)).clamp(0.0, 1.0);
+    (
+        (c_min.0 as f32 + t * (c_max.0 as f32 - c_min.0 as f32)) as u8,
+        (c_min.1 as f32 + t * (c_max.1 as f32 - c_min.1 as f32)) as u8,
+        (c_min.2 as f32 + t * (c_max.2 as f32 - c_min.2 as f32)) as u8,
+    )
 }
