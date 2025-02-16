@@ -393,7 +393,14 @@ impl MyApp {
                     let gyro_frames = frames.frames_of_type::<realsense_rust::frame::GyroFrame>();
                     for gyro_frame in gyro_frames {
                         let rot_velocity = gyro_frame.rotational_velocity();
-                        self.add_motion_frame_item(ui, *rot_velocity, size, 0.5, gyro_frame);
+                        self.add_motion_frame_item(
+                            ui,
+                            *rot_velocity,
+                            size,
+                            0.5,
+                            gyro_frame,
+                            "radians/s",
+                        );
                         if frame_count % columns == 0 {
                             ui.end_row();
                         }
@@ -404,7 +411,7 @@ impl MyApp {
                     let accel_frames = frames.frames_of_type::<realsense_rust::frame::AccelFrame>();
                     for accel_frame in accel_frames {
                         let accel = accel_frame.acceleration();
-                        self.add_motion_frame_item(ui, *accel, size, 0.1, accel_frame);
+                        self.add_motion_frame_item(ui, *accel, size, 0.1, accel_frame, "m/s²");
                         if frame_count % columns == 0 {
                             ui.end_row();
                         }
@@ -432,11 +439,27 @@ impl MyApp {
             ui.vertical(|ui| {
                 let texture = egui_ctx.load_texture("unnamed", img, Default::default());
                 ui.image(&texture);
-                let ts = frame.timestamp();
-                let ts_domain = frame.timestamp_domain().as_str();
-                ui.label(format!("{ts_domain}: {ts:.2}"));
+                self.add_timestamp_line(ui, size.0 as f32, frame);
             });
         });
+    }
+
+    fn add_timestamp_line<T: realsense_rust::frame::FrameEx>(
+        &mut self,
+        ui: &mut egui::Ui,
+        width: f32,
+        frame: T,
+    ) {
+        ui.allocate_ui_with_layout(
+            egui::Vec2::new(width, 15.0),
+            egui::Layout::left_to_right(egui::Align::Max),
+            |ui| {
+                let ts = frame.timestamp();
+                let ts_domain = frame.timestamp_domain().as_str();
+                let label = egui::Label::new(format!("{ts_domain}: {ts:.2}"));
+                ui.add(label.wrap_mode(egui::TextWrapMode::Truncate));
+            },
+        );
     }
 
     fn add_motion_frame_item<T: realsense_rust::frame::FrameEx>(
@@ -446,6 +469,7 @@ impl MyApp {
         size: (u32, u32),
         scale: f32,
         frame: T,
+        units: &str,
     ) {
         egui::Frame::canvas(ui.style()).show(ui, |ui| {
             ui.vertical(|ui| {
@@ -491,16 +515,24 @@ impl MyApp {
                     egui::Color32::DARK_GRAY,
                 );
 
-                ui.horizontal(|ui| {
-                    ui.label(format!("X: {:>6.2}", data[0]));
-                    ui.label(format!("Y: {:>6.2}", data[1]));
-                    ui.label(format!("Z: {:>6.2}", data[2]));
-                });
-                let ts = frame.timestamp();
-                let ts_domain = frame.timestamp_domain().as_str();
-                ui.label(format!("{ts_domain}: {ts:.2}"));
+                self.add_components_line(ui, size.0 as f32, data, units);
+                self.add_timestamp_line(ui, size.0 as f32, frame);
             });
         });
+    }
+
+    fn add_components_line(&mut self, ui: &mut egui::Ui, width: f32, data: [f32; 3], units: &str) {
+        ui.allocate_ui_with_layout(
+            egui::Vec2::new(width, 15.0),
+            egui::Layout::left_to_right(egui::Align::Max),
+            |ui| {
+                let label = egui::Label::new(format!(
+                    "X: {:>6.2}  Y: {:>6.2}  Z: {:>6.2}  [{}]",
+                    data[0], data[1], data[2], units
+                ));
+                ui.add(label.wrap_mode(egui::TextWrapMode::Truncate));
+            },
+        );
     }
 
     fn left_panel(&mut self, egui_ctx: &egui::Context) {
