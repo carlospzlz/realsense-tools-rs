@@ -474,7 +474,7 @@ impl MyApp {
         egui::Frame::canvas(ui.style()).show(ui, |ui| {
             ui.vertical(|ui| {
                 // Account for motion values
-                let size = (size.0, size.1 - 21);
+                let size = (size.0, size.1 - 18);
                 let (area, _response) = ui.allocate_at_least(
                     egui::vec2(size.0 as f32, size.1 as f32),
                     egui::Sense::hover(),
