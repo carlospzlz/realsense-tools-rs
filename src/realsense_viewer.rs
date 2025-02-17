@@ -536,66 +536,97 @@ impl MyApp {
     }
 
     fn left_panel(&mut self, egui_ctx: &egui::Context) {
-        egui::SidePanel::left("left_panel").show(egui_ctx, |ui| {
-            egui::Grid::new("streams").show(ui, |ui| {
-                ui.end_row();
+        egui::SidePanel::left("left_panel")
+            .exact_width(130.0)
+            .show(egui_ctx, |ui| {
+                ui.horizontal(|_ui| {});
                 ui.label("Streams");
-                ui.end_row();
-                ui.label("Depth");
-                if ui.checkbox(&mut self.depth_stream_enabled, "").clicked() {
-                    self.update_current_pipeline();
-                }
-                ui.end_row();
-                ui.label("Color");
-                if ui.checkbox(&mut self.color_stream_enabled, "").clicked() {
-                    self.update_current_pipeline();
-                }
-                ui.end_row();
-                ui.label("Infrared 0");
-                if ui
-                    .checkbox(&mut self.infrared_0_stream_enabled, "")
-                    .clicked()
-                {
-                    self.update_current_pipeline();
-                }
-                ui.end_row();
-                ui.label("Infrared 1");
-                if ui
-                    .checkbox(&mut self.infrared_1_stream_enabled, "")
-                    .clicked()
-                {
-                    self.update_current_pipeline();
-                }
-                ui.end_row();
-                ui.label("Gyro");
-                if ui.checkbox(&mut self.gyro_stream_enabled, "").clicked() {
-                    self.update_current_pipeline();
-                }
-                ui.end_row();
-                ui.label("Accel");
-                if ui.checkbox(&mut self.accel_stream_enabled, "").clicked() {
-                    self.update_current_pipeline();
-                }
-                ui.end_row();
-                ui.end_row();
-                ui.label("Sensors");
-                ui.end_row();
-                ui.label("Global Time");
-                if ui.checkbox(&mut self.global_time_enabled, "").clicked() {
-                    self.update_sensors();
-                }
-                ui.end_row();
-                ui.label("Emitter");
-                if ui.checkbox(&mut self.emitter_enabled, "").clicked() {
-                    self.update_sensors();
-                }
-                ui.end_row();
-                ui.label("Auto Exposure");
-                if ui.checkbox(&mut self.auto_exposure_enabled, "").clicked() {
-                    self.update_sensors();
-                }
+                ui.horizontal(|ui| {
+                    ui.label("Depth");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        if ui.checkbox(&mut self.depth_stream_enabled, "").clicked() {
+                            self.update_current_pipeline();
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Color");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        if ui.checkbox(&mut self.color_stream_enabled, "").clicked() {
+                            self.update_current_pipeline();
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Infrared 0");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        if ui
+                            .checkbox(&mut self.infrared_0_stream_enabled, "")
+                            .clicked()
+                        {
+                            self.update_current_pipeline();
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Infrared 1");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        if ui
+                            .checkbox(&mut self.infrared_1_stream_enabled, "")
+                            .clicked()
+                        {
+                            self.update_current_pipeline();
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Gyro");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        if ui.checkbox(&mut self.gyro_stream_enabled, "").clicked() {
+                            self.update_current_pipeline();
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Accel");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        if ui.checkbox(&mut self.accel_stream_enabled, "").clicked() {
+                            self.update_current_pipeline();
+                        }
+                    });
+                });
+                ui.horizontal(|_ui| {});
+                ui.horizontal(|_ui| {});
+                ui.horizontal(|ui| {
+                    ui.label("Sensor Options");
+                    let separator = egui::Separator::default();
+                    ui.add(separator.horizontal());
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Global Time");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        if ui.checkbox(&mut self.global_time_enabled, "").clicked() {
+                            self.update_sensors();
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Emitter");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        if ui.checkbox(&mut self.emitter_enabled, "").clicked() {
+                            self.update_sensors();
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Auto Exposure");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        if ui.checkbox(&mut self.auto_exposure_enabled, "").clicked() {
+                            self.update_sensors();
+                        }
+                    });
+                });
             });
-        });
     }
 
     fn right_panel(
@@ -603,23 +634,113 @@ impl MyApp {
         egui_ctx: &egui::Context,
         frames: &Option<realsense_rust::frame::CompositeFrame>,
     ) {
-        egui::SidePanel::right("right_panel").show(egui_ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Frames received:");
+        egui::SidePanel::right("right_panel")
+            .min_width(200.0)
+            .max_width(400.0)
+            .show(egui_ctx, |ui| {
+                ui.horizontal(|_ui| {});
+
+                // General Info
+                ui.label("General Info");
                 let frames_count = if let Some(frames) = frames {
                     frames.count()
                 } else {
                     0
                 };
-                ui.label(format!("{}", frames_count));
-            });
-            if let Some(pipeline) = &self.pipeline {
-                for stream_profile in pipeline.profile().streams() {
-                    let kind = stream_profile.kind();
-                    ui.label(format!("{:?}", kind));
+                ui.label(format!("Frames received: {frames_count}"));
+                let streams_count = if let Some(pipeline) = &self.pipeline {
+                    pipeline.profile().streams().len()
+                } else {
+                    0
+                };
+                ui.label(format!("Streams: {streams_count}"));
+                let sensors_count = if let Some(pipeline) = &self.pipeline {
+                    pipeline.profile().device().sensors().len()
+                } else {
+                    0
+                };
+                ui.label(format!("Sensors: {sensors_count}"));
+                if let Some(pipeline) = &self.pipeline {
+                    for sensor in pipeline.profile().device().sensors() {
+                        let name = sensor.info(realsense_rust::kind::Rs2CameraInfo::Name);
+                        if let Some(name) = name {
+                            let name = String::from(name.to_str().unwrap());
+                            ui.label(format!("  •  {name}"));
+                        }
+                    }
                 }
-            }
-        });
+                ui.horizontal(|_ui| {});
+
+                // Streams Info
+                ui.horizontal(|ui| {
+                    ui.label("Streams Info");
+                    let separator = egui::Separator::default();
+                    ui.add(separator.horizontal());
+                });
+                if let Some(pipeline) = &self.pipeline {
+                    // Search for IR0 stream as reference stream to get extrinsics to
+                    //};
+                    let ir0_stream_profile = pipeline
+                        .profile()
+                        .streams()
+                        .iter()
+                        .find(|s| {
+                            s.kind() == realsense_rust::kind::Rs2StreamKind::Infrared
+                                && s.index() == 1
+                        })
+                        .expect("IR0 stream not found!");
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        // Print info of all streams
+                        for stream_profile in pipeline.profile().streams() {
+                            let kind = stream_profile.kind();
+                            let index = stream_profile.index();
+                            ui.collapsing(format!("{:?}:{index}", kind), |ui| {
+                                ui.label(format!("Format: {:?}", stream_profile.format()));
+                                ui.label(format!("Unique ID: {}", stream_profile.unique_id()));
+                                ui.label(format!("Framerate: {}", stream_profile.framerate()));
+                                match stream_profile.intrinsics() {
+                                    Ok(intrinsics) => {
+                                        ui.label(egui::RichText::new("Intrinsics:").strong());
+                                        ui.label(format!(
+                                            "Size: {}x{}",
+                                            intrinsics.width(),
+                                            intrinsics.height()
+                                        ));
+                                        ui.label(format!(
+                                            "Principal Point: {}, {}",
+                                            intrinsics.ppx(),
+                                            intrinsics.ppy()
+                                        ));
+                                        ui.label(format!(
+                                            "Focal Length: {}, {}",
+                                            intrinsics.fx(),
+                                            intrinsics.fy()
+                                        ));
+                                        let distortion = intrinsics.distortion();
+                                        ui.label(format!(
+                                            "Distortion Model: {:?}",
+                                            distortion.model
+                                        ));
+                                        ui.label(format!(
+                                            "Distortion Coeffs: {:?}",
+                                            distortion.coeffs
+                                        ));
+                                    }
+                                    Err(_) => (),
+                                }
+                                match stream_profile.extrinsics(ir0_stream_profile) {
+                                    Ok(extrinsics) => {
+                                        ui.label(egui::RichText::new("Extrinsics:").strong());
+                                        ui.label(format!("To IR1: {:?}", extrinsics.translation()));
+                                    }
+                                    Err(_) => (),
+                                }
+                            });
+                            ui.horizontal(|_ui| {});
+                        }
+                    });
+                }
+            });
     }
 
     fn bottom_panel(
