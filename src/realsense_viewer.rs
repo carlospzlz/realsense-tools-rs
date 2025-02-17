@@ -27,8 +27,8 @@ struct MyApp {
     pipeline: Option<realsense_rust::pipeline::ActivePipeline>,
     depth_stream_enabled: bool,
     color_stream_enabled: bool,
-    infrared_0_stream_enabled: bool,
     infrared_1_stream_enabled: bool,
+    infrared_2_stream_enabled: bool,
     accel_stream_enabled: bool,
     gyro_stream_enabled: bool,
     global_time_enabled: bool,
@@ -48,8 +48,8 @@ impl MyApp {
             pipeline: None,
             depth_stream_enabled: true,
             color_stream_enabled: true,
-            infrared_0_stream_enabled: true,
             infrared_1_stream_enabled: true,
+            infrared_2_stream_enabled: true,
             accel_stream_enabled: true,
             gyro_stream_enabled: true,
             global_time_enabled: true,
@@ -149,8 +149,8 @@ impl MyApp {
     ) -> Option<realsense_rust::pipeline::ActivePipeline> {
         if !self.depth_stream_enabled
             && !self.color_stream_enabled
-            && !self.infrared_0_stream_enabled
             && !self.infrared_1_stream_enabled
+            && !self.infrared_2_stream_enabled
             && !self.accel_stream_enabled
             && !self.gyro_stream_enabled
         {
@@ -212,7 +212,7 @@ impl MyApp {
         }
 
         // Index start at 1, madness
-        if self.infrared_0_stream_enabled {
+        if self.infrared_1_stream_enabled {
             config
                 .enable_stream(
                     realsense_rust::kind::Rs2StreamKind::Infrared,
@@ -222,14 +222,14 @@ impl MyApp {
                     realsense_rust::kind::Rs2Format::Y8,
                     30,
                 )
-                .expect("Failed to enable IR0 stream");
+                .expect("Failed to enable IR1 stream");
         } else {
             config
                 .disable_stream_at_index(realsense_rust::kind::Rs2StreamKind::Infrared, 1)
-                .expect("Failed to disable IR0 stream");
+                .expect("Failed to disable IR1 stream");
         }
 
-        if self.infrared_1_stream_enabled {
+        if self.infrared_2_stream_enabled {
             config
                 .enable_stream(
                     realsense_rust::kind::Rs2StreamKind::Infrared,
@@ -558,10 +558,10 @@ impl MyApp {
                     });
                 });
                 ui.horizontal(|ui| {
-                    ui.label("Infrared 0");
+                    ui.label("Infrared 1");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                         if ui
-                            .checkbox(&mut self.infrared_0_stream_enabled, "")
+                            .checkbox(&mut self.infrared_1_stream_enabled, "")
                             .clicked()
                         {
                             self.update_current_pipeline();
@@ -569,10 +569,10 @@ impl MyApp {
                     });
                 });
                 ui.horizontal(|ui| {
-                    ui.label("Infrared 1");
+                    ui.label("Infrared 2");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                         if ui
-                            .checkbox(&mut self.infrared_1_stream_enabled, "")
+                            .checkbox(&mut self.infrared_2_stream_enabled, "")
                             .clicked()
                         {
                             self.update_current_pipeline();
@@ -678,7 +678,7 @@ impl MyApp {
                     ui.add(separator.horizontal());
                 });
                 if let Some(pipeline) = &self.pipeline {
-                    // Search for IR0 stream as reference stream to get extrinsics to
+                    // Search for IR1 stream as reference stream to get extrinsics to
                     //};
                     let ir0_stream_profile = pipeline
                         .profile()
@@ -688,7 +688,7 @@ impl MyApp {
                             s.kind() == realsense_rust::kind::Rs2StreamKind::Infrared
                                 && s.index() == 1
                         })
-                        .expect("IR0 stream not found!");
+                        .expect("IR1 stream not found!");
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         // Print info of all streams
                         for stream_profile in pipeline.profile().streams() {
