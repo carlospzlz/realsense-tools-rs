@@ -688,36 +688,59 @@ impl MyApp {
                             let kind = stream_profile.kind();
                             let index = stream_profile.index();
                             ui.collapsing(format!("{:?}:{index}", kind), |ui| {
-                                ui.label(format!("Format: {:?}", stream_profile.format()));
-                                ui.label(format!("Unique ID: {}", stream_profile.unique_id()));
-                                ui.label(format!("Framerate: {}", stream_profile.framerate()));
+                                egui::Grid::new("sensor_info").striped(true).show(ui, |ui| {
+                                    ui.label("Format");
+                                    ui.label(format!("{:?}", stream_profile.format()));
+                                    ui.end_row();
+                                    ui.label("Unique ID");
+                                    ui.label(format!("{}", stream_profile.unique_id()));
+                                    ui.end_row();
+                                    ui.label("Framerate");
+                                    ui.label(format!("{}", stream_profile.framerate()));
+                                });
                                 match stream_profile.intrinsics() {
                                     Ok(intrinsics) => {
                                         ui.label(egui::RichText::new("Intrinsics:").strong());
-                                        ui.label(format!(
-                                            "Size: {}x{}",
-                                            intrinsics.width(),
-                                            intrinsics.height()
-                                        ));
-                                        ui.label(format!(
-                                            "Principal Point: {}, {}",
-                                            intrinsics.ppx(),
-                                            intrinsics.ppy()
-                                        ));
-                                        ui.label(format!(
-                                            "Focal Length: {}, {}",
-                                            intrinsics.fx(),
-                                            intrinsics.fy()
-                                        ));
-                                        let distortion = intrinsics.distortion();
-                                        ui.label(format!(
-                                            "Distortion Model: {:?}",
-                                            distortion.model
-                                        ));
-                                        ui.label(format!(
-                                            "Distortion Coeffs: {:?}",
-                                            distortion.coeffs
-                                        ));
+                                        egui::Grid::new("intrinsics").striped(true).show(
+                                            ui,
+                                            |ui| {
+                                                ui.label("Size");
+                                                ui.label(format!(
+                                                    "{}x{}",
+                                                    intrinsics.width(),
+                                                    intrinsics.height()
+                                                ));
+                                                ui.end_row();
+                                                ui.label("Principal Point");
+                                                ui.label(format!(
+                                                    "{:.2}, {:.2}",
+                                                    intrinsics.ppx(),
+                                                    intrinsics.ppy()
+                                                ));
+                                                ui.end_row();
+                                                ui.label("Focal Length");
+                                                ui.label(format!(
+                                                    "{:.2}, {:.2}",
+                                                    intrinsics.fx(),
+                                                    intrinsics.fy()
+                                                ));
+                                                ui.end_row();
+                                                let distortion = intrinsics.distortion();
+                                                ui.label("Distortion Model");
+                                                ui.label(format!("{:?}", distortion.model));
+                                                ui.end_row();
+                                                ui.label("Distortion Coeffs");
+                                                let coeffs = distortion.coeffs;
+                                                ui.label(format!(
+                                                    "{:.1},{:.1},{:.1},{:.1},{:.1}",
+                                                    coeffs[0],
+                                                    coeffs[1],
+                                                    coeffs[2],
+                                                    coeffs[3],
+                                                    coeffs[4]
+                                                ));
+                                            },
+                                        );
                                     }
                                     Err(_) => (),
                                 }
@@ -725,10 +748,17 @@ impl MyApp {
                                 if let Some(ir1_stream_profile) = ir1_stream_profile {
                                     match stream_profile.extrinsics(ir1_stream_profile) {
                                         Ok(extrinsics) => {
-                                            ui.label(format!(
-                                                "To IR1: {:?}",
-                                                extrinsics.translation()
-                                            ));
+                                            egui::Grid::new("extrinsics").striped(true).show(
+                                                ui,
+                                                |ui| {
+                                                    ui.label("To IR1 [m]");
+                                                    let t = extrinsics.translation();
+                                                    ui.label(format!(
+                                                        "{:.4}, {:.4}, {:.4}",
+                                                        t[0], t[1], t[2]
+                                                    ));
+                                                },
+                                            );
                                         }
                                         Err(_) => (),
                                     }
