@@ -679,16 +679,9 @@ impl MyApp {
                 });
                 if let Some(pipeline) = &self.pipeline {
                     // Search for IR1 stream as reference stream to get extrinsics to
-                    //};
-                    let ir0_stream_profile = pipeline
-                        .profile()
-                        .streams()
-                        .iter()
-                        .find(|s| {
-                            s.kind() == realsense_rust::kind::Rs2StreamKind::Infrared
-                                && s.index() == 1
-                        })
-                        .expect("IR1 stream not found!");
+                    let ir1_stream_profile = pipeline.profile().streams().iter().find(|s| {
+                        s.kind() == realsense_rust::kind::Rs2StreamKind::Infrared && s.index() == 1
+                    });
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         // Print info of all streams
                         for stream_profile in pipeline.profile().streams() {
@@ -728,12 +721,19 @@ impl MyApp {
                                     }
                                     Err(_) => (),
                                 }
-                                match stream_profile.extrinsics(ir0_stream_profile) {
-                                    Ok(extrinsics) => {
-                                        ui.label(egui::RichText::new("Extrinsics:").strong());
-                                        ui.label(format!("To IR1: {:?}", extrinsics.translation()));
+                                ui.label(egui::RichText::new("Extrinsics:").strong());
+                                if let Some(ir1_stream_profile) = ir1_stream_profile {
+                                    match stream_profile.extrinsics(ir1_stream_profile) {
+                                        Ok(extrinsics) => {
+                                            ui.label(format!(
+                                                "To IR1: {:?}",
+                                                extrinsics.translation()
+                                            ));
+                                        }
+                                        Err(_) => (),
                                     }
-                                    Err(_) => (),
+                                } else {
+                                    ui.label(egui::RichText::new("IR1 must be enabled").italics());
                                 }
                             });
                             ui.horizontal(|_ui| {});
