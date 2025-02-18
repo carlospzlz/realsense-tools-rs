@@ -635,8 +635,9 @@ impl MyApp {
         frames: &Option<realsense_rust::frame::CompositeFrame>,
     ) {
         egui::SidePanel::right("right_panel")
-            .min_width(200.0)
-            .max_width(400.0)
+            .min_width(130.0)
+            .max_width(250.0)
+            .default_width(130.0)
             .show(egui_ctx, |ui| {
                 ui.horizontal(|_ui| {});
 
@@ -678,10 +679,6 @@ impl MyApp {
                     ui.add(separator.horizontal());
                 });
                 if let Some(pipeline) = &self.pipeline {
-                    // Search for IR1 stream as reference stream to get extrinsics to
-                    let ir1_stream_profile = pipeline.profile().streams().iter().find(|s| {
-                        s.kind() == realsense_rust::kind::Rs2StreamKind::Infrared && s.index() == 1
-                    });
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         // Print info of all streams
                         for stream_profile in pipeline.profile().streams() {
@@ -745,26 +742,25 @@ impl MyApp {
                                     Err(_) => (),
                                 }
                                 ui.label(egui::RichText::new("Extrinsics:").strong());
-                                if let Some(ir1_stream_profile) = ir1_stream_profile {
-                                    match stream_profile.extrinsics(ir1_stream_profile) {
-                                        Ok(extrinsics) => {
-                                            egui::Grid::new("extrinsics").striped(true).show(
-                                                ui,
-                                                |ui| {
-                                                    ui.label("To IR1 [m]");
-                                                    let t = extrinsics.translation();
-                                                    ui.label(format!(
-                                                        "{:.4}, {:.4}, {:.4}",
-                                                        t[0], t[1], t[2]
-                                                    ));
-                                                },
-                                            );
+                                egui::Grid::new("extrinsics").striped(true).show(ui, |ui| {
+                                    for other_stream_profile in pipeline.profile().streams() {
+                                        let kind = other_stream_profile.kind();
+                                        let index = other_stream_profile.index();
+                                        let id = format!("{}:{}", kind, index);
+                                        match stream_profile.extrinsics(other_stream_profile) {
+                                            Ok(extrinsics) => {
+                                                ui.label(format!("To {id}"));
+                                                let t = extrinsics.translation();
+                                                ui.label(format!(
+                                                    "{:.2}, {:.2}, {:.2}",
+                                                    t[0], t[1], t[2]
+                                                ));
+                                                ui.end_row();
+                                            }
+                                            Err(_) => (),
                                         }
-                                        Err(_) => (),
                                     }
-                                } else {
-                                    ui.label(egui::RichText::new("IR1 must be enabled").italics());
-                                }
+                                });
                             });
                             ui.horizontal(|_ui| {});
                         }
