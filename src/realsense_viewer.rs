@@ -679,140 +679,153 @@ impl MyApp {
                     ui.add(separator.horizontal());
                 });
                 if let Some(pipeline) = &self.pipeline {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        // Print info of all streams
-                        for stream_profile in pipeline.profile().streams() {
-                            let kind = stream_profile.kind();
-                            let index = stream_profile.index();
-                            ui.collapsing(format!("{:?}:{index}", kind), |ui| {
-                                egui::Grid::new("sensor_info").striped(true).show(ui, |ui| {
-                                    ui.label("Format");
-                                    ui.label(format!("{:?}", stream_profile.format()));
-                                    ui.end_row();
-                                    ui.label("Unique ID");
-                                    ui.label(format!("{}", stream_profile.unique_id()));
-                                    ui.end_row();
-                                    ui.label("Framerate");
-                                    ui.label(format!("{}", stream_profile.framerate()));
-                                });
-                                match stream_profile.intrinsics() {
-                                    Ok(intrinsics) => {
-                                        ui.label(egui::RichText::new("Intrinsics:").strong());
-                                        egui::Grid::new("intrinsics").striped(true).show(
-                                            ui,
-                                            |ui| {
-                                                ui.label("Size");
-                                                ui.label(format!(
-                                                    "{}x{}",
-                                                    intrinsics.width(),
-                                                    intrinsics.height()
-                                                ));
-                                                ui.end_row();
-                                                ui.label("Principal Point");
-                                                ui.label(format!(
-                                                    "{:.2}, {:.2}",
-                                                    intrinsics.ppx(),
-                                                    intrinsics.ppy()
-                                                ));
-                                                ui.end_row();
-                                                ui.label("Focal Length");
-                                                ui.label(format!(
-                                                    "{:.2}, {:.2}",
-                                                    intrinsics.fx(),
-                                                    intrinsics.fy()
-                                                ));
-                                                ui.end_row();
-                                                let distortion = intrinsics.distortion();
-                                                ui.label("Distortion Model");
-                                                ui.label(format!("{:?}", distortion.model));
-                                                ui.end_row();
-                                                ui.label("Distortion Coeffs");
-                                                let coeffs = distortion.coeffs;
-                                                ui.label(format!(
-                                                    "{:.1},{:.1},{:.1},{:.1},{:.1}",
-                                                    coeffs[0],
-                                                    coeffs[1],
-                                                    coeffs[2],
-                                                    coeffs[3],
-                                                    coeffs[4]
-                                                ));
-                                            },
-                                        );
-                                    }
-                                    Err(_) => (),
-                                }
-                                match stream_profile.motion_intrinsics() {
-                                    Ok(intrinsics) => {
-                                        ui.label(egui::RichText::new("Intrinsics:").strong());
-                                        egui::Grid::new("intrinsics").striped(true).show(
-                                            ui,
-                                            |ui| {
-                                                let data = intrinsics.data();
-                                                ui.label("Scale/Bias [0]");
-                                                ui.label(format!(
-                                                    "{:.2} {:.2} {:.2} {:.2}",
-                                                    data[0][0], data[0][1], data[0][2], data[0][3]
-                                                ));
-                                                ui.end_row();
-                                                ui.label("Scale/Bias [1]");
-                                                ui.label(format!(
-                                                    "{:.2} {:.2} {:.2} {:.2}",
-                                                    data[1][0], data[1][1], data[1][2], data[1][3]
-                                                ));
-                                                ui.end_row();
-                                                ui.label("Scale/Bias [2]");
-                                                ui.label(format!(
-                                                    "{:.2} {:.2} {:.2} {:.2}",
-                                                    data[2][0], data[2][1], data[2][2], data[2][3]
-                                                ));
-                                                ui.end_row();
-                                                let noise_variances = intrinsics.noise_variances();
-                                                ui.label("Noise Variances");
-                                                ui.label(format!(
-                                                    "{:.2}, {:.2}, {:.2}",
-                                                    noise_variances[0],
-                                                    noise_variances[1],
-                                                    noise_variances[2]
-                                                ));
-                                                ui.end_row();
-                                                let bias_variances = intrinsics.bias_variances();
-                                                ui.label("Bias Variances");
-                                                ui.label(format!(
-                                                    "{:.2}, {:.2}, {:.2}",
-                                                    bias_variances[0],
-                                                    bias_variances[1],
-                                                    bias_variances[2]
-                                                ));
-                                            },
-                                        );
-                                    }
-                                    Err(_) => (),
-                                }
-
-                                ui.label(egui::RichText::new("Extrinsics:").strong());
-                                egui::Grid::new("extrinsics").striped(true).show(ui, |ui| {
-                                    for other_stream_profile in pipeline.profile().streams() {
-                                        let kind = other_stream_profile.kind();
-                                        let index = other_stream_profile.index();
-                                        let id = format!("{}:{}", kind, index);
-                                        match stream_profile.extrinsics(other_stream_profile) {
-                                            Ok(extrinsics) => {
-                                                ui.label(format!("To {id}"));
-                                                let t = extrinsics.translation();
-                                                ui.label(format!(
-                                                    "{:.2}, {:.2}, {:.2}",
-                                                    t[0], t[1], t[2]
-                                                ));
-                                                ui.end_row();
-                                            }
-                                            Err(_) => (),
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            // Print info of all streams
+                            for stream_profile in pipeline.profile().streams() {
+                                let kind = stream_profile.kind();
+                                let index = stream_profile.index();
+                                ui.collapsing(format!("{:?}:{index}", kind), |ui| {
+                                    egui::Grid::new("sensor_info").striped(true).show(ui, |ui| {
+                                        ui.label("Format");
+                                        ui.label(format!("{:?}", stream_profile.format()));
+                                        ui.end_row();
+                                        ui.label("Unique ID");
+                                        ui.label(format!("{}", stream_profile.unique_id()));
+                                        ui.end_row();
+                                        ui.label("Framerate");
+                                        ui.label(format!("{}", stream_profile.framerate()));
+                                    });
+                                    match stream_profile.intrinsics() {
+                                        Ok(intrinsics) => {
+                                            ui.label(egui::RichText::new("Intrinsics:").strong());
+                                            egui::Grid::new("intrinsics").striped(true).show(
+                                                ui,
+                                                |ui| {
+                                                    ui.label("Size");
+                                                    ui.label(format!(
+                                                        "{}x{}",
+                                                        intrinsics.width(),
+                                                        intrinsics.height()
+                                                    ));
+                                                    ui.end_row();
+                                                    ui.label("Principal Point");
+                                                    ui.label(format!(
+                                                        "{:.2}, {:.2}",
+                                                        intrinsics.ppx(),
+                                                        intrinsics.ppy()
+                                                    ));
+                                                    ui.end_row();
+                                                    ui.label("Focal Length");
+                                                    ui.label(format!(
+                                                        "{:.2}, {:.2}",
+                                                        intrinsics.fx(),
+                                                        intrinsics.fy()
+                                                    ));
+                                                    ui.end_row();
+                                                    let distortion = intrinsics.distortion();
+                                                    ui.label("Distortion Model");
+                                                    ui.label(format!("{:?}", distortion.model));
+                                                    ui.end_row();
+                                                    ui.label("Distortion Coeffs");
+                                                    let coeffs = distortion.coeffs;
+                                                    ui.label(format!(
+                                                        "{:.1},{:.1},{:.1},{:.1},{:.1}",
+                                                        coeffs[0],
+                                                        coeffs[1],
+                                                        coeffs[2],
+                                                        coeffs[3],
+                                                        coeffs[4]
+                                                    ));
+                                                },
+                                            );
                                         }
+                                        Err(_) => (),
                                     }
+                                    match stream_profile.motion_intrinsics() {
+                                        Ok(intrinsics) => {
+                                            ui.label(egui::RichText::new("Intrinsics:").strong());
+                                            egui::Grid::new("intrinsics").striped(true).show(
+                                                ui,
+                                                |ui| {
+                                                    let data = intrinsics.data();
+                                                    ui.label("Scale/Bias [0]");
+                                                    ui.label(format!(
+                                                        "{:.2} {:.2} {:.2} {:.2}",
+                                                        data[0][0],
+                                                        data[0][1],
+                                                        data[0][2],
+                                                        data[0][3]
+                                                    ));
+                                                    ui.end_row();
+                                                    ui.label("Scale/Bias [1]");
+                                                    ui.label(format!(
+                                                        "{:.2} {:.2} {:.2} {:.2}",
+                                                        data[1][0],
+                                                        data[1][1],
+                                                        data[1][2],
+                                                        data[1][3]
+                                                    ));
+                                                    ui.end_row();
+                                                    ui.label("Scale/Bias [2]");
+                                                    ui.label(format!(
+                                                        "{:.2} {:.2} {:.2} {:.2}",
+                                                        data[2][0],
+                                                        data[2][1],
+                                                        data[2][2],
+                                                        data[2][3]
+                                                    ));
+                                                    ui.end_row();
+                                                    let noise_variances =
+                                                        intrinsics.noise_variances();
+                                                    ui.label("Noise Variances");
+                                                    ui.label(format!(
+                                                        "{:.2}, {:.2}, {:.2}",
+                                                        noise_variances[0],
+                                                        noise_variances[1],
+                                                        noise_variances[2]
+                                                    ));
+                                                    ui.end_row();
+                                                    let bias_variances =
+                                                        intrinsics.bias_variances();
+                                                    ui.label("Bias Variances");
+                                                    ui.label(format!(
+                                                        "{:.2}, {:.2}, {:.2}",
+                                                        bias_variances[0],
+                                                        bias_variances[1],
+                                                        bias_variances[2]
+                                                    ));
+                                                },
+                                            );
+                                        }
+                                        Err(_) => (),
+                                    }
+
+                                    ui.label(egui::RichText::new("Extrinsics:").strong());
+                                    egui::Grid::new("extrinsics").striped(true).show(ui, |ui| {
+                                        for other_stream_profile in pipeline.profile().streams() {
+                                            let kind = other_stream_profile.kind();
+                                            let index = other_stream_profile.index();
+                                            let id = format!("{}:{}", kind, index);
+                                            match stream_profile.extrinsics(other_stream_profile) {
+                                                Ok(extrinsics) => {
+                                                    ui.label(format!("To {id}"));
+                                                    let t = extrinsics.translation();
+                                                    ui.label(format!(
+                                                        "{:.2}, {:.2}, {:.2}",
+                                                        t[0], t[1], t[2]
+                                                    ));
+                                                    ui.end_row();
+                                                }
+                                                Err(_) => (),
+                                            }
+                                        }
+                                    });
                                 });
-                            });
-                            ui.horizontal(|_ui| {});
-                        }
-                    });
+                                ui.horizontal(|_ui| {});
+                            }
+                        });
                 }
             });
     }
