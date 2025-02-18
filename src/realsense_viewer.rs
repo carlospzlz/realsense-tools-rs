@@ -636,7 +636,7 @@ impl MyApp {
     ) {
         egui::SidePanel::right("right_panel")
             .min_width(130.0)
-            .max_width(250.0)
+            .max_width(280.0)
             .default_width(130.0)
             .show(egui_ctx, |ui| {
                 ui.horizontal(|_ui| {});
@@ -741,6 +741,54 @@ impl MyApp {
                                     }
                                     Err(_) => (),
                                 }
+                                match stream_profile.motion_intrinsics() {
+                                    Ok(intrinsics) => {
+                                        ui.label(egui::RichText::new("Intrinsics:").strong());
+                                        egui::Grid::new("intrinsics").striped(true).show(
+                                            ui,
+                                            |ui| {
+                                                let data = intrinsics.data();
+                                                ui.label("Scale/Bias [0]");
+                                                ui.label(format!(
+                                                    "{:.2} {:.2} {:.2} {:.2}",
+                                                    data[0][0], data[0][1], data[0][2], data[0][3]
+                                                ));
+                                                ui.end_row();
+                                                ui.label("Scale/Bias [1]");
+                                                ui.label(format!(
+                                                    "{:.2} {:.2} {:.2} {:.2}",
+                                                    data[1][0], data[1][1], data[1][2], data[1][3]
+                                                ));
+                                                ui.end_row();
+                                                ui.label("Scale/Bias [2]");
+                                                ui.label(format!(
+                                                    "{:.2} {:.2} {:.2} {:.2}",
+                                                    data[2][0], data[2][1], data[2][2], data[2][3]
+                                                ));
+                                                ui.end_row();
+                                                let noise_variances = intrinsics.noise_variances();
+                                                ui.label("Noise Variances");
+                                                ui.label(format!(
+                                                    "{:.2}, {:.2}, {:.2}",
+                                                    noise_variances[0],
+                                                    noise_variances[1],
+                                                    noise_variances[2]
+                                                ));
+                                                ui.end_row();
+                                                let bias_variances = intrinsics.bias_variances();
+                                                ui.label("Bias Variances");
+                                                ui.label(format!(
+                                                    "{:.2}, {:.2}, {:.2}",
+                                                    bias_variances[0],
+                                                    bias_variances[1],
+                                                    bias_variances[2]
+                                                ));
+                                            },
+                                        );
+                                    }
+                                    Err(_) => (),
+                                }
+
                                 ui.label(egui::RichText::new("Extrinsics:").strong());
                                 egui::Grid::new("extrinsics").striped(true).show(ui, |ui| {
                                     for other_stream_profile in pipeline.profile().streams() {
