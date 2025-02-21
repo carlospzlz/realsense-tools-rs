@@ -11,6 +11,10 @@ path = "src/enumerate_devices.rs"
 name = "realsense-viewer"
 path = "src/realsense_viewer.rs"
 
+[[bin]]
+name = "realsense-3d-viewer"
+path = "src/realsense_3d_viewer.rs"
+
 [dependencies]
 anyhow = "1.0.95"
 eframe = "0.31.0"
