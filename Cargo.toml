@@ -17,7 +17,9 @@ path = "src/realsense_3d_viewer.rs"
 
 [dependencies]
 anyhow = "1.0.95"
+bytemuck = "1.21.0"
 eframe = "0.31.0"
 env_logger = "0.11.6"
+glam = "0.30.0"
 image = "0.25.5"
 realsense-rust = "1.2.3"

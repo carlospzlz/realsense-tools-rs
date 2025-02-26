@@ -1416,6 +1416,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glam"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17fcdf9683c406c2fc4d124afd29c0d595e22210d633cbdb8695ba9935ab1dc6"
+
+[[package]]
 name = "glow"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2816,8 +2822,10 @@ name = "realsense-tools-rs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "eframe",
  "env_logger",
+ "glam",
  "image",
  "realsense-rust",
 ]
