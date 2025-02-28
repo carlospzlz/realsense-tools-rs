@@ -4,6 +4,36 @@ use eframe::glow::HasContext;
 use std::collections::HashSet;
 use std::time::Duration;
 
+const VERTEX_SHADER_SRC: &str = r#"
+    #version 330 core
+    layout(location = 0) in vec3 position;
+    layout(location = 1) in vec2 instanceTranslation;
+    layout(location = 2) in float instanceHeight;
+    layout(location = 3) in vec3 instanceColor;
+
+    uniform mat4 viewProjection;
+
+    out vec3 fragColor;
+
+    void main() {
+        //float baseCorrection = (1.0 - instanceHeight) / 2.0;
+        //float baseCorrection = 0.0;
+        vec3 translation = vec3(instanceTranslation.x, instanceTranslation.y, instanceHeight);
+        vec3 worldPosition = position * vec3(1.0, 1.0, instanceHeight * 4.0) + translation;
+        gl_Position = viewProjection * vec4(worldPosition, 1.0);
+        fragColor = instanceColor;
+    }
+"#;
+
+const FRAGMENT_SHADER_SRC: &str = r#"
+    #version 330 core
+    in vec3 fragColor;
+    out vec4 color;
+    void main() {
+        color = vec4(fragColor, 1.0);
+    }
+"#;
+
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
         depth_buffer: 1, // Important for 3D rendering
@@ -29,6 +59,8 @@ struct MyApp {
     translation: glam::Vec3,
     rotation: glam::Vec2,
     last_mouse_pos: Option<egui::Pos2>,
+    instance_height_vbo: glow::NativeBuffer,
+    instance_color_vbo: glow::NativeBuffer,
 }
 
 impl MyApp {
@@ -48,30 +80,42 @@ impl MyApp {
             .as_ref()
             .expect("You need to run eframe with the glow backend");
 
-        let vertices: &[f32] = &[
-            // Positions        // Colors
-            -0.5, -0.5, -0.5, 1.0, 0.0, 0.0, // Red
-            0.5, -0.5, -0.5, 0.0, 1.0, 0.0, // Green
-            0.5, 0.5, -0.5, 0.0, 0.0, 1.0, // Blue
-            -0.5, 0.5, -0.5, 1.0, 1.0, 0.0, // Yellow
-            -0.5, -0.5, 0.5, 1.0, 0.0, 1.0, // Magenta
-            0.5, -0.5, 0.5, 0.0, 1.0, 1.0, // Cyan
-            0.5, 0.5, 0.5, 1.0, 1.0, 1.0, // White
-            -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, // Gray
+        // Set up shaders
+        let program = create_shader_program(gl);
+
+        // Cube vertices (8 unique vertices for the cube)
+        let vertices: [f32; 24] = [
+            -0.005, -0.005, -0.005, // 0: Bottom-left-back
+            0.005, -0.005, -0.005, // 1: Bottom-right-back
+            0.005, 0.005, -0.005, // 2: Top-right-back
+            -0.005, 0.005, -0.005, // 3: Top-left-back
+            -0.005, -0.005, 0.005, // 4: Bottom-left-front
+            0.005, -0.005, 0.005, // 5: Bottom-right-front
+            0.005, 0.005, 0.005, // 6: Top-right-front
+            -0.005, 0.005, 0.005, // 7: Top-left-front
         ];
 
-        let indices: &[u32] = &[
-            0, 1, 2, 2, 3, 0, // Front face
-            4, 5, 6, 6, 7, 4, // Back face
-            4, 5, 1, 1, 0, 4, // Bottom face
-            7, 6, 2, 2, 3, 7, // Top face
-            4, 0, 3, 3, 7, 4, // Left face
-            5, 1, 2, 2, 6, 5, // Right face
+        // Define indices (referencing the 8 unique vertices)
+        let indices: [u32; 36] = [
+            0, 1, 2, 2, 3, 0, // Back face
+            4, 5, 6, 6, 7, 4, // Front face
+            0, 1, 5, 5, 4, 0, // Bottom face
+            2, 3, 7, 7, 6, 2, // Top face
+            0, 3, 7, 7, 4, 0, // Left face
+            1, 2, 6, 6, 5, 1, // Right face
         ];
 
+        // VAO to store:
+        // - position VBO
+        // - indexes
+        // - instance translation VBO
+        // - instance height VBO
+        // - instance color VBO
+        // - vertex attrib pointers
+        let vao = unsafe { gl.create_vertex_array().unwrap() };
+
+        // Unique cube
         unsafe {
-            // VAO to store: vertex attrib pointers, VBOs and indexes
-            let vao = gl.create_vertex_array().unwrap();
             gl.bind_vertex_array(Some(vao));
 
             // Prepare OpenGL buffers for vertex and index data
@@ -82,7 +126,7 @@ impl MyApp {
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(vertex_buffer));
             gl.buffer_data_u8_slice(
                 glow::ARRAY_BUFFER,
-                &bytemuck::cast_slice(vertices),
+                &bytemuck::cast_slice(&vertices),
                 glow::STATIC_DRAW,
             );
 
@@ -90,54 +134,127 @@ impl MyApp {
             gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(index_buffer));
             gl.buffer_data_u8_slice(
                 glow::ELEMENT_ARRAY_BUFFER,
-                &bytemuck::cast_slice(indices),
+                &bytemuck::cast_slice(&indices),
                 glow::STATIC_DRAW,
             );
 
-            // Set up shaders
-            let program = create_shader_program(gl);
-
-            // Set up vertex attributes (position, color)
+            // Set up vertex attribute for position
             let position_location = gl.get_attrib_location(program, "position").unwrap() as u32;
             gl.vertex_attrib_pointer_f32(
                 position_location,
                 3,
                 glow::FLOAT,
                 false,
-                6 * std::mem::size_of::<f32>() as i32,
+                3 * std::mem::size_of::<f32>() as i32,
                 0,
             );
             gl.enable_vertex_attrib_array(position_location);
+        }
 
-            let color_location = gl.get_attrib_location(program, "color").unwrap() as u32;
+        // Number of vertices
+        let instance_number = 640 * 640;
+
+        // Instance translations
+        let mut translation_data: Vec<f32> = vec![0.0; instance_number * 2];
+        for x in 0..640 {
+            for y in 0..640 {
+                let base_index = (x * 640 + y) * 2;
+                translation_data[base_index] = (x as f32 - 320.0) / 100.0;
+                translation_data[base_index + 1] = (y as f32 - 320.0) / 100.0;
+            }
+        }
+        let instance_translation_vbo = unsafe { gl.create_buffer().unwrap() };
+        unsafe {
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(instance_translation_vbo));
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                &bytemuck::cast_slice(&translation_data),
+                glow::STATIC_DRAW,
+            );
+
+            let location = gl
+                .get_attrib_location(program, "instanceTranslation")
+                .unwrap() as u32;
             gl.vertex_attrib_pointer_f32(
-                color_location,
+                location,
+                2,
+                glow::FLOAT,
+                false,
+                2 * std::mem::size_of::<f32>() as i32,
+                0,
+            );
+            gl.enable_vertex_attrib_array(location);
+
+            // Important! translation is per-instance, not per vertex
+            gl.vertex_attrib_divisor(location, 1);
+        }
+
+        // Initialize instance heights
+        let height_data: Vec<f32> = vec![1.0; instance_number];
+        let instance_height_vbo = unsafe { gl.create_buffer().unwrap() };
+        unsafe {
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(instance_height_vbo));
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                &bytemuck::cast_slice(&height_data),
+                glow::DYNAMIC_DRAW,
+            );
+
+            let location = gl.get_attrib_location(program, "instanceHeight").unwrap() as u32;
+            gl.vertex_attrib_pointer_f32(
+                location,
+                1,
+                glow::FLOAT,
+                false,
+                std::mem::size_of::<f32>() as i32,
+                0,
+            );
+            gl.enable_vertex_attrib_array(location);
+
+            gl.vertex_attrib_divisor(location, 1);
+        }
+
+        // Initialize instance colors
+        let color_data: Vec<f32> = vec![1.0; instance_number * 3];
+        let instance_color_vbo = unsafe { gl.create_buffer().unwrap() };
+        unsafe {
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(instance_color_vbo));
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                &bytemuck::cast_slice(&color_data),
+                glow::DYNAMIC_DRAW,
+            );
+
+            let location = gl.get_attrib_location(program, "instanceColor").unwrap() as u32;
+            gl.vertex_attrib_pointer_f32(
+                location,
                 3,
                 glow::FLOAT,
                 false,
-                6 * std::mem::size_of::<f32>() as i32,
                 3 * std::mem::size_of::<f32>() as i32,
+                0,
             );
-            gl.enable_vertex_attrib_array(color_location);
+            gl.enable_vertex_attrib_array(location);
 
-            // Apply rotation using a transformation matrix
-            //let rotation_matrix = nalgebra::Matrix4::from_euler_angles(PI / 180.0 * 45.0, PI / 180.0 * 45.0, 0.0); // Rotating 45 degrees
-            //let rotation_uniform = gl.get_uniform_location(program, "rotation").unwrap();
-            //gl.uniform_matrix4_f32_slice(Some(&rotation_uniform), false, rotation_matrix.as_slice());
+            gl.vertex_attrib_divisor(location, 1);
+        }
 
-            // Unbind VAO
+        // Unbind VAO
+        unsafe {
             gl.bind_vertex_array(None);
+        }
 
-            Self {
-                realsense_ctx,
-                pipeline: pipeline,
-                program: program,
-                vao: vao,
-                angle: 0.0,
-                translation: glam::Vec3::new(0.0, 0.0, 0.0),
-                rotation: glam::Vec2::new(0.0, 0.0),
-                last_mouse_pos: None,
-            }
+        Self {
+            realsense_ctx,
+            pipeline: pipeline,
+            program: program,
+            vao: vao,
+            angle: 0.0,
+            translation: glam::Vec3::new(0.0, 0.0, -15.0),
+            rotation: glam::Vec2::new(0.0, 0.0),
+            last_mouse_pos: None,
+            instance_height_vbo,
+            instance_color_vbo,
         }
     }
 }
@@ -166,17 +283,65 @@ impl eframe::App for MyApp {
                 {
                     panic!("Make sure depth and color frames are the same size");
                 }
-                let max_value = 4000.0; // 4m
-                let mut img =
-                    image::RgbImage::new(depth_frame.width() as u32, depth_frame.height() as u32);
-                for (x, y, pixel) in img.enumerate_pixels_mut() {
-                    match depth_frame.get_unchecked(x as usize, y as usize) {
-                        realsense_rust::frame::PixelKind::Z16 { depth } => {
-                            let normalized = *depth as f32 / max_value;
-                            //println!("{}", normalized);
+
+                let instance_number = 640 * 640;
+                let mut color_data: Vec<f32> = vec![0.0; instance_number * 3];
+                let mut depth_data: Vec<f32> = vec![0.0; instance_number];
+                let max_depth = 4000.0; // 4m
+                for x in 0..depth_frame.width() {
+                    for y in 0..depth_frame.height() {
+                        match depth_frame.get_unchecked(x, y) {
+                            realsense_rust::frame::PixelKind::Z16 { depth } => {
+                                let normalized = (*depth as f32 / max_depth).clamp(0.0, 1.0);
+                                if normalized > 0.05 {
+                                    depth_data[x * 640 + y] = (1.0 - normalized) * 4.0;
+                                    match color_frame.get_unchecked(x, y) {
+                                        realsense_rust::frame::PixelKind::Bgr8 { b, g, r } => {
+                                            let base_index = (x * 640 + y) * 3;
+                                            color_data[base_index] = *r as f32 / 255.0;
+                                            color_data[base_index + 1] = *g as f32 / 255.0;
+                                            color_data[base_index + 2] = *b as f32 / 255.0;
+                                        }
+                                        _ => panic!("Color type is wrong!"),
+                                    }
+                                }
+                            }
+                            _ => panic!("Depth type is wrong!"),
                         }
-                        _ => panic!("Depth type is wrong!"),
+                        //match color_frame.get_unchecked(x, y) {
+                        //    realsense_rust::frame::PixelKind::Bgr8 { b, g, r } => {
+                        //        let base_index = (x * 640 + y) * 3;
+                        //        color_data[base_index] = *r as f32 / 255.0;
+                        //        color_data[base_index + 1] = *g as f32 / 255.0;
+                        //        color_data[base_index + 2] = *b as f32 / 255.0;
+                        //    }
+                        //    _ => panic!("Color type is wrong!"),
+                        //}
                     }
+                }
+
+                // Make this better
+                // What happens if there no frames?
+                let gl = frame.gl().expect("Can't get GL from frame");
+
+                // Update instances height
+                unsafe {
+                    gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.instance_height_vbo));
+                    gl.buffer_data_u8_slice(
+                        glow::ARRAY_BUFFER,
+                        &bytemuck::cast_slice(&depth_data),
+                        glow::DYNAMIC_DRAW,
+                    );
+                }
+
+                // Update instances color
+                unsafe {
+                    gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.instance_color_vbo));
+                    gl.buffer_data_u8_slice(
+                        glow::ARRAY_BUFFER,
+                        &bytemuck::cast_slice(&color_data),
+                        glow::DYNAMIC_DRAW,
+                    );
                 }
             }
         }
@@ -194,22 +359,6 @@ impl eframe::App for MyApp {
         let view = translation * rotation;
         let view_projection = projection * view;
 
-        let mut model_matrices = Vec::new();
-
-        for x in 0..4 {
-            for z in 0..4 {
-                // Scale cube height
-                let scale = glam::Mat4::from_scale(glam::Vec3::new(1.0, (x + z) as f32, 1.0));
-
-                // Position the cube in the grid
-                let translation = glam::Mat4::from_translation(glam::Vec3::new(x as f32, z as f32, 0.0));
-
-                // Compute final transformation matrix
-                let model = translation * scale;
-                model_matrices.push(model);
-            }
-        }
-
         unsafe {
             gl.clear_color(1.0, 0.3, 0.3, 1.0);
             gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
@@ -226,16 +375,10 @@ impl eframe::App for MyApp {
             gl.use_program(Some(self.program));
             gl.bind_vertex_array(Some(self.vao));
 
-            // Create a buffer for instance data
-            let instance_vbo = gl.create_buffer().unwrap();
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(instance_vbo));
-
-            // Convert Mat4 data into a flat Vec<f32>
-            let matrix_data: Vec<f32> = model_matrices.iter().flat_map(|m| m.to_cols_array()).collect();
-            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, bytemuck::cast_slice(&matrix_data), glow::STATIC_DRAW);
-
             // Apply view projection matrix
-            let uniform_location = gl.get_uniform_location(self.program, "viewProjection").unwrap();
+            let uniform_location = gl
+                .get_uniform_location(self.program, "viewProjection")
+                .unwrap();
             gl.uniform_matrix_4_f32_slice(
                 Some(&uniform_location),
                 false,
@@ -243,7 +386,7 @@ impl eframe::App for MyApp {
             );
 
             // Draw the cube
-            gl.draw_elements(glow::TRIANGLES, 36, glow::UNSIGNED_INT, 0);
+            gl.draw_elements_instanced(glow::TRIANGLES, 36, glow::UNSIGNED_INT, 0, 640 * 640);
         }
 
         egui_ctx.request_repaint();
@@ -258,7 +401,8 @@ fn start_pipeline(
     let realsense_device = find_realsense(devices);
 
     if realsense_device.is_none() {
-        panic!("No RealSense device found!");
+        eprintln!("No RealSense device found!");
+        std::process::exit(-1);
     }
 
     // We want depth and color
@@ -320,34 +464,13 @@ fn match_info(
     }
 }
 
-//#layout(location = 2) in mat4 modelMatrix;
-// modelMatrix
 fn create_shader_program(gl: &glow::Context) -> glow::NativeProgram {
     unsafe {
         // Vertex shader
-        let vertex_shader_src = r#"
-            #version 330 core
-            layout(location = 0) in vec3 position;
-            layout(location = 1) in vec3 color;
-            uniform mat4 viewProjection;
-            out vec3 fragColor;
-            void main() {
-                gl_Position = viewProjection * vec4(position, 1.0);
-                fragColor = color;
-            }
-        "#;
-        let vertex_shader = compile_shader(gl, glow::VERTEX_SHADER, vertex_shader_src);
+        let vertex_shader = compile_shader(gl, glow::VERTEX_SHADER, VERTEX_SHADER_SRC);
 
         // Fragment shader
-        let fragment_shader_src = r#"
-            #version 330 core
-            in vec3 fragColor;
-            out vec4 color;
-            void main() {
-                color = vec4(fragColor, 1.0);
-            }
-        "#;
-        let fragment_shader = compile_shader(gl, glow::FRAGMENT_SHADER, fragment_shader_src);
+        let fragment_shader = compile_shader(gl, glow::FRAGMENT_SHADER, FRAGMENT_SHADER_SRC);
 
         // Shader program
         let program = gl.create_program().unwrap();
@@ -355,6 +478,7 @@ fn create_shader_program(gl: &glow::Context) -> glow::NativeProgram {
         gl.attach_shader(program, fragment_shader);
         gl.link_program(program);
         gl.use_program(Some(program));
+
         program
     }
 }
