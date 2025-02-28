@@ -1,6 +1,7 @@
 use eframe::egui;
 use eframe::glow;
 use eframe::glow::HasContext;
+use realsense_rust::frame::FrameEx;
 use std::collections::HashSet;
 use std::time::Duration;
 
@@ -61,6 +62,7 @@ struct MyApp {
     last_mouse_pos: Option<egui::Pos2>,
     instance_height_vbo: glow::NativeBuffer,
     instance_color_vbo: glow::NativeBuffer,
+    previous_frames: Option<realsense_rust::frame::CompositeFrame>,
 }
 
 impl MyApp {
@@ -255,6 +257,7 @@ impl MyApp {
             last_mouse_pos: None,
             instance_height_vbo,
             instance_color_vbo,
+            previous_frames: None,
         }
     }
 }
@@ -277,72 +280,74 @@ impl eframe::App for MyApp {
             let color_frames = frames.frames_of_type::<realsense_rust::frame::ColorFrame>();
             if !depth_frames.is_empty() && !color_frames.is_empty() {
                 let depth_frame = &depth_frames[0];
-                let color_frame = &color_frames[0];
-                if depth_frame.width() != color_frame.width()
-                    || depth_frame.height() != color_frame.height()
+                if let Some(emitter_mode) =
+                    depth_frame.metadata(realsense_rust::kind::Rs2FrameMetadata::FrameEmitterMode)
                 {
-                    panic!("Make sure depth and color frames are the same size");
-                }
+                    if emitter_mode == 1 {
+                        let color_frame = &color_frames[0];
+                        if depth_frame.width() != color_frame.width()
+                            || depth_frame.height() != color_frame.height()
+                        {
+                            panic!("Make sure depth and color frames are the same size");
+                        }
 
-                let instance_number = 640 * 640;
-                let mut color_data: Vec<f32> = vec![0.0; instance_number * 4];
-                let mut depth_data: Vec<f32> = vec![0.0; instance_number];
-                let max_depth = 4000.0; // 4m
-                for x in 0..depth_frame.width() {
-                    for y in 0..depth_frame.height() {
-                        match depth_frame.get_unchecked(x, y) {
-                            realsense_rust::frame::PixelKind::Z16 { depth } => {
-                                let normalized = (*depth as f32 / max_depth).clamp(0.0, 1.0);
-                                if normalized > 0.05 {
-                                    depth_data[x * 640 + y] = (1.0 - normalized) * 4.0;
-                                    match color_frame.get_unchecked(x, y) {
-                                        realsense_rust::frame::PixelKind::Bgr8 { b, g, r } => {
-                                            let base_index = (x * 640 + y) * 4;
-                                            color_data[base_index] = *r as f32 / 255.0;
-                                            color_data[base_index + 1] = *g as f32 / 255.0;
-                                            color_data[base_index + 2] = *b as f32 / 255.0;
-                                            color_data[base_index + 3] = 1.0;
+                        let instance_number = 640 * 640;
+                        let mut color_data: Vec<f32> = vec![0.0; instance_number * 4];
+                        let mut depth_data: Vec<f32> = vec![0.0; instance_number];
+                        let max_depth = 4000.0; // 4m
+                        for x in 0..depth_frame.width() {
+                            for y in 0..depth_frame.height() {
+                                match depth_frame.get_unchecked(x, y) {
+                                    realsense_rust::frame::PixelKind::Z16 { depth } => {
+                                        let normalized =
+                                            (*depth as f32 / max_depth).clamp(0.0, 1.0);
+                                        if normalized > 0.05 {
+                                            depth_data[x * 640 + y] = (1.0 - normalized) * 4.0;
+                                            match color_frame.get_unchecked(x, y) {
+                                                realsense_rust::frame::PixelKind::Bgr8 {
+                                                    b,
+                                                    g,
+                                                    r,
+                                                } => {
+                                                    let base_index = (x * 640 + y) * 4;
+                                                    color_data[base_index] = *r as f32 / 255.0;
+                                                    color_data[base_index + 1] = *g as f32 / 255.0;
+                                                    color_data[base_index + 2] = *b as f32 / 255.0;
+                                                    color_data[base_index + 3] = 1.0;
+                                                }
+                                                _ => panic!("Color type is wrong!"),
+                                            }
                                         }
-                                        _ => panic!("Color type is wrong!"),
                                     }
+                                    _ => panic!("Depth type is wrong!"),
                                 }
                             }
-                            _ => panic!("Depth type is wrong!"),
                         }
-                        //match color_frame.get_unchecked(x, y) {
-                        //    realsense_rust::frame::PixelKind::Bgr8 { b, g, r } => {
-                        //        let base_index = (x * 640 + y) * 3;
-                        //        color_data[base_index] = *r as f32 / 255.0;
-                        //        color_data[base_index + 1] = *g as f32 / 255.0;
-                        //        color_data[base_index + 2] = *b as f32 / 255.0;
-                        //    }
-                        //    _ => panic!("Color type is wrong!"),
-                        //}
+
+                        // Make this better
+                        // What happens if there no frames?
+                        let gl = frame.gl().expect("Can't get GL from frame");
+
+                        // Update instances height
+                        unsafe {
+                            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.instance_height_vbo));
+                            gl.buffer_data_u8_slice(
+                                glow::ARRAY_BUFFER,
+                                &bytemuck::cast_slice(&depth_data),
+                                glow::DYNAMIC_DRAW,
+                            );
+                        }
+
+                        // Update instances color
+                        unsafe {
+                            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.instance_color_vbo));
+                            gl.buffer_data_u8_slice(
+                                glow::ARRAY_BUFFER,
+                                &bytemuck::cast_slice(&color_data),
+                                glow::DYNAMIC_DRAW,
+                            );
+                        }
                     }
-                }
-
-                // Make this better
-                // What happens if there no frames?
-                let gl = frame.gl().expect("Can't get GL from frame");
-
-                // Update instances height
-                unsafe {
-                    gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.instance_height_vbo));
-                    gl.buffer_data_u8_slice(
-                        glow::ARRAY_BUFFER,
-                        &bytemuck::cast_slice(&depth_data),
-                        glow::DYNAMIC_DRAW,
-                    );
-                }
-
-                // Update instances color
-                unsafe {
-                    gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.instance_color_vbo));
-                    gl.buffer_data_u8_slice(
-                        glow::ARRAY_BUFFER,
-                        &bytemuck::cast_slice(&color_data),
-                        glow::DYNAMIC_DRAW,
-                    );
                 }
             }
         }
@@ -436,9 +441,19 @@ fn start_pipeline(
         )
         .expect("Failed to enable color stream");
 
-    pipeline
+    let pipeline = pipeline
         .start(Some(config))
-        .expect("Failed to start pipeline")
+        .expect("Failed to start pipeline");
+
+    for mut sensor in pipeline.profile().device().sensors() {
+        if sensor.supports_option(realsense_rust::kind::Rs2Option::EmitterEnabled) {
+            sensor
+                .set_option(realsense_rust::kind::Rs2Option::EmitterOnOff, 1.0)
+                .expect("Failed to set option: EmitterEnabled");
+        }
+    }
+
+    pipeline
 }
 
 ///
