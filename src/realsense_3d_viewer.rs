@@ -9,11 +9,11 @@ const VERTEX_SHADER_SRC: &str = r#"
     layout(location = 0) in vec3 position;
     layout(location = 1) in vec2 instanceTranslation;
     layout(location = 2) in float instanceHeight;
-    layout(location = 3) in vec3 instanceColor;
+    layout(location = 3) in vec4 instanceColor;
 
     uniform mat4 viewProjection;
 
-    out vec3 fragColor;
+    out vec4 fragColor;
 
     void main() {
         //float baseCorrection = (1.0 - instanceHeight) / 2.0;
@@ -27,10 +27,10 @@ const VERTEX_SHADER_SRC: &str = r#"
 
 const FRAGMENT_SHADER_SRC: &str = r#"
     #version 330 core
-    in vec3 fragColor;
+    in vec4 fragColor;
     out vec4 color;
     void main() {
-        color = vec4(fragColor, 1.0);
+        color = fragColor;
     }
 "#;
 
@@ -215,7 +215,7 @@ impl MyApp {
         }
 
         // Initialize instance colors
-        let color_data: Vec<f32> = vec![1.0; instance_number * 3];
+        let color_data: Vec<f32> = vec![0.0; instance_number * 4];
         let instance_color_vbo = unsafe { gl.create_buffer().unwrap() };
         unsafe {
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(instance_color_vbo));
@@ -228,10 +228,10 @@ impl MyApp {
             let location = gl.get_attrib_location(program, "instanceColor").unwrap() as u32;
             gl.vertex_attrib_pointer_f32(
                 location,
-                3,
+                4,
                 glow::FLOAT,
                 false,
-                3 * std::mem::size_of::<f32>() as i32,
+                4 * std::mem::size_of::<f32>() as i32,
                 0,
             );
             gl.enable_vertex_attrib_array(location);
@@ -285,7 +285,7 @@ impl eframe::App for MyApp {
                 }
 
                 let instance_number = 640 * 640;
-                let mut color_data: Vec<f32> = vec![0.0; instance_number * 3];
+                let mut color_data: Vec<f32> = vec![0.0; instance_number * 4];
                 let mut depth_data: Vec<f32> = vec![0.0; instance_number];
                 let max_depth = 4000.0; // 4m
                 for x in 0..depth_frame.width() {
@@ -297,10 +297,11 @@ impl eframe::App for MyApp {
                                     depth_data[x * 640 + y] = (1.0 - normalized) * 4.0;
                                     match color_frame.get_unchecked(x, y) {
                                         realsense_rust::frame::PixelKind::Bgr8 { b, g, r } => {
-                                            let base_index = (x * 640 + y) * 3;
+                                            let base_index = (x * 640 + y) * 4;
                                             color_data[base_index] = *r as f32 / 255.0;
                                             color_data[base_index + 1] = *g as f32 / 255.0;
                                             color_data[base_index + 2] = *b as f32 / 255.0;
+                                            color_data[base_index + 3] = 1.0;
                                         }
                                         _ => panic!("Color type is wrong!"),
                                     }
