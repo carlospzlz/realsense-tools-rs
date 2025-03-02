@@ -19,8 +19,8 @@ const VERTEX_SHADER_SRC: &str = r#"
     void main() {
         //float baseCorrection = (1.0 - instanceHeight) / 2.0;
         //float baseCorrection = 0.0;
-        vec3 translation = vec3(instanceTranslation.x, instanceTranslation.y, instanceHeight);
-        vec3 worldPosition = position * vec3(1.0, 1.0, instanceHeight * 4.0) + translation;
+        vec3 translation = vec3(instanceTranslation.x, instanceTranslation.y, 1.0);
+        vec3 worldPosition = position * vec3(1.0, 1.0, instanceHeight * 100.0) + translation;
         gl_Position = viewProjection * vec4(worldPosition, 1.0);
         fragColor = instanceColor;
     }
@@ -63,6 +63,8 @@ struct MyApp {
     instance_height_vbo: glow::NativeBuffer,
     instance_color_vbo: glow::NativeBuffer,
     previous_frames: Option<realsense_rust::frame::CompositeFrame>,
+    depth_frame: Option<realsense_rust::frame::DepthFrame>,
+    infrared_frame: Option<realsense_rust::frame::InfraredFrame>,
 }
 
 impl MyApp {
@@ -258,6 +260,8 @@ impl MyApp {
             instance_height_vbo,
             instance_color_vbo,
             previous_frames: None,
+            depth_frame: None,
+            infrared_frame: None,
         }
     }
 }
@@ -265,7 +269,7 @@ impl MyApp {
 impl eframe::App for MyApp {
     fn update(&mut self, egui_ctx: &egui::Context, frame: &mut eframe::Frame) {
         // Get frames
-        let timeout = Duration::from_millis(50);
+        let timeout = Duration::from_millis(100);
         let frames = match self.pipeline.wait(Some(timeout)) {
             Ok(frames) => Some(frames),
             Err(e) => {
@@ -274,81 +278,107 @@ impl eframe::App for MyApp {
             }
         };
 
-        // Create buffer of colored depth 3D bars
-        if let Some(frames) = frames {
-            let depth_frames = frames.frames_of_type::<realsense_rust::frame::DepthFrame>();
-            let color_frames = frames.frames_of_type::<realsense_rust::frame::ColorFrame>();
-            if !depth_frames.is_empty() && !color_frames.is_empty() {
-                let depth_frame = &depth_frames[0];
-                if let Some(emitter_mode) =
-                    depth_frame.metadata(realsense_rust::kind::Rs2FrameMetadata::FrameEmitterMode)
-                {
-                    if emitter_mode == 1 {
-                        let color_frame = &color_frames[0];
-                        if depth_frame.width() != color_frame.width()
-                            || depth_frame.height() != color_frame.height()
-                        {
-                            panic!("Make sure depth and color frames are the same size");
-                        }
+        if let Some(ref frames) = frames {
+            // Sync
+            if self.depth_frame.is_none() {
+                let depth_frames = frames.frames_of_type::<realsense_rust::frame::DepthFrame>();
+                self.depth_frame = frame_of_type_with_emitter(depth_frames, 1);
+            }
+            if self.infrared_frame.is_none() {
+                let infrared_frames = frames.frames_of_type::<realsense_rust::frame::InfraredFrame>();
+                self.infrared_frame = frame_of_type_with_emitter(infrared_frames, 1);
+            }
+        }
 
-                        let instance_number = 640 * 640;
-                        let mut color_data: Vec<f32> = vec![0.0; instance_number * 4];
-                        let mut depth_data: Vec<f32> = vec![0.0; instance_number];
-                        let max_depth = 4000.0; // 4m
-                        for x in 0..depth_frame.width() {
-                            for y in 0..depth_frame.height() {
-                                match depth_frame.get_unchecked(x, y) {
-                                    realsense_rust::frame::PixelKind::Z16 { depth } => {
-                                        let normalized =
-                                            (*depth as f32 / max_depth).clamp(0.0, 1.0);
-                                        if normalized > 0.05 {
-                                            depth_data[x * 640 + y] = (1.0 - normalized) * 4.0;
-                                            match color_frame.get_unchecked(x, y) {
-                                                realsense_rust::frame::PixelKind::Bgr8 {
-                                                    b,
-                                                    g,
-                                                    r,
-                                                } => {
-                                                    let base_index = (x * 640 + y) * 4;
-                                                    color_data[base_index] = *r as f32 / 255.0;
-                                                    color_data[base_index + 1] = *g as f32 / 255.0;
-                                                    color_data[base_index + 2] = *b as f32 / 255.0;
-                                                    color_data[base_index + 3] = 1.0;
-                                                }
-                                                _ => panic!("Color type is wrong!"),
-                                            }
-                                        }
+        // Create buffer of infrared depth 3D bars
+        //if let Some(ref frames) = frames {
+        //    let depth_frames = frames.frames_of_type::<realsense_rust::frame::DepthFrame>();
+        //    let depth_frame = &depth_frames[0];
+        //    let infrared_frames = frames.frames_of_type::<realsense_rust::frame::InfraredFrame>();
+        //    let infrared_frame = &infrared_frames[0];
+        //    let depth_emitter =
+        //        depth_frame.metadata(realsense_rust::kind::Rs2FrameMetadata::FrameEmitterMode);
+        //    let infrared_emitter =
+        //        infrared_frame.metadata(realsense_rust::kind::Rs2FrameMetadata::FrameEmitterMode);
+        //    //println!("{} / {}", depth_frames.len(), infrared_frames.len());
+        //    //println!("{} | {}", depth_emitter.unwrap(), infrared_emitter.unwrap());
+        //    if !depth_frames.is_empty() {
+        //        let depth_frame = &depth_frames[0];
+        //        if let Some(emitter_mode) =
+        //            depth_frame.metadata(realsense_rust::kind::Rs2FrameMetadata::FrameEmitterMode)
+        //        {
+        //            // It seems that when the emitter is off is when depth is sane,
+        //            // I guess that's because it's computed from the previous infrared
+        //            // frames, where the emitter was on.
+        //            if emitter_mode == 1 {
+        //                if let Some(previous_frames) = self.previous_frames.take() {
+        //                    println!("{} | {}", depth_emitter.unwrap(), infrared_emitter.unwrap());
+        //                    let infrared_frames =
+        //                        frames.frames_of_type::<realsense_rust::frame::InfraredFrame>();
+        //                    let infrared_frame = &infrared_frames[0];
+        //                    let emitter = infrared_frame
+        //                        .metadata(realsense_rust::kind::Rs2FrameMetadata::FrameEmitterMode);
+        //                    println!("{}", emitter.unwrap());
+
+        if self.depth_frame.is_some() && self.infrared_frame.is_some() {
+            let depth_frame = self.depth_frame.take().unwrap();
+            let infrared_frame = self.infrared_frame.take().unwrap();
+            if depth_frame.width() != infrared_frame.width()
+                || depth_frame.height() != infrared_frame.height()
+            {
+                panic!("Make sure depth and infrared frames are the same size");
+            }
+
+            let instance_number = 640 * 640;
+            let mut infrared_data: Vec<f32> = vec![0.0; instance_number * 4];
+            let mut depth_data: Vec<f32> = vec![0.0; instance_number];
+            let max_depth = 4000.0; // 4m
+            for x in 0..depth_frame.width() {
+                for yy in 0..depth_frame.height() {
+                    match depth_frame.get_unchecked(x, yy) {
+                        realsense_rust::frame::PixelKind::Z16 { depth } => {
+                            let normalized = (*depth as f32 / max_depth).clamp(0.0, 1.0);
+                            if normalized > 0.05 {
+                                depth_data[x * 640 + yy] = (1.0 - normalized) * 4.0;
+                                match infrared_frame.get_unchecked(x, yy) {
+                                    realsense_rust::frame::PixelKind::Y8 { y } => {
+                                        let base_index = (x * 640 + yy) * 4;
+                                        infrared_data[base_index] = *y as f32 / 255.0;
+                                        infrared_data[base_index + 1] = *y as f32 / 255.0;
+                                        infrared_data[base_index + 2] = *y as f32 / 255.0;
+                                        infrared_data[base_index + 3] = 1.0;
                                     }
-                                    _ => panic!("Depth type is wrong!"),
+                                    _ => panic!("Color type is wrong!"),
                                 }
                             }
                         }
-
-                        // Make this better
-                        // What happens if there no frames?
-                        let gl = frame.gl().expect("Can't get GL from frame");
-
-                        // Update instances height
-                        unsafe {
-                            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.instance_height_vbo));
-                            gl.buffer_data_u8_slice(
-                                glow::ARRAY_BUFFER,
-                                &bytemuck::cast_slice(&depth_data),
-                                glow::DYNAMIC_DRAW,
-                            );
-                        }
-
-                        // Update instances color
-                        unsafe {
-                            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.instance_color_vbo));
-                            gl.buffer_data_u8_slice(
-                                glow::ARRAY_BUFFER,
-                                &bytemuck::cast_slice(&color_data),
-                                glow::DYNAMIC_DRAW,
-                            );
-                        }
+                        _ => panic!("Depth type is wrong!"),
                     }
                 }
+            }
+
+            // Make this better
+            // What happens if there no frames?
+            let gl = frame.gl().expect("Can't get GL from frame");
+
+            // Update instances height
+            unsafe {
+                gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.instance_height_vbo));
+                gl.buffer_data_u8_slice(
+                    glow::ARRAY_BUFFER,
+                    &bytemuck::cast_slice(&depth_data),
+                    glow::DYNAMIC_DRAW,
+                );
+            }
+
+            // Update instances color
+            unsafe {
+                gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.instance_color_vbo));
+                gl.buffer_data_u8_slice(
+                    glow::ARRAY_BUFFER,
+                    &bytemuck::cast_slice(&infrared_data),
+                    glow::DYNAMIC_DRAW,
+                );
             }
         }
 
@@ -395,6 +425,8 @@ impl eframe::App for MyApp {
             gl.draw_elements_instanced(glow::TRIANGLES, 36, glow::UNSIGNED_INT, 0, 640 * 640);
         }
 
+        self.previous_frames = frames;
+
         egui_ctx.request_repaint();
     }
 }
@@ -432,11 +464,11 @@ fn start_pipeline(
         )
         .expect("Failed to enable depth stream")
         .enable_stream(
-            realsense_rust::kind::Rs2StreamKind::Color,
-            None,
+            realsense_rust::kind::Rs2StreamKind::Infrared,
+            Some(1),
             640,
             0,
-            realsense_rust::kind::Rs2Format::Bgr8,
+            realsense_rust::kind::Rs2Format::Y8,
             30,
         )
         .expect("Failed to enable color stream");
@@ -446,11 +478,21 @@ fn start_pipeline(
         .expect("Failed to start pipeline");
 
     for mut sensor in pipeline.profile().device().sensors() {
-        if sensor.supports_option(realsense_rust::kind::Rs2Option::EmitterEnabled) {
+        if sensor.supports_option(realsense_rust::kind::Rs2Option::EmitterOnOff) {
             sensor
                 .set_option(realsense_rust::kind::Rs2Option::EmitterOnOff, 1.0)
-                .expect("Failed to set option: EmitterEnabled");
+                .expect("Failed to set option: EmitterOnOff");
         }
+        if sensor.supports_option(realsense_rust::kind::Rs2Option::EnableAutoExposure) {
+            sensor
+                .set_option(realsense_rust::kind::Rs2Option::EnableAutoExposure, 0.0)
+                .expect("Failed to set option: EnableAutoExposure");
+        }
+        //if sensor.supports_option(realsense_rust::kind::Rs2Option::EmitterEnabled) {
+        //    sensor
+        //        .set_option(realsense_rust::kind::Rs2Option::EmitterEnabled, 0.0)
+        //        .expect("Failed to set option: EmitterEnabled");
+        //}
     }
 
     pipeline
@@ -534,5 +576,27 @@ fn get_rotation(input: &egui::InputState) -> glam::Vec2 {
         )
     } else {
         glam::Vec2::ZERO
+    }
+}
+
+fn frame_of_type_with_emitter<T: realsense_rust::frame::FrameEx>(
+    mut frames: Vec<T>,
+    emitter_mode: i64,
+) -> Option<T> {
+    if frames.is_empty() {
+        return None;
+    }
+
+    let frame = &frames[0];
+    let mode = frame.metadata(realsense_rust::kind::Rs2FrameMetadata::FrameEmitterMode);
+
+    if mode.is_none() {
+        return None;
+    }
+
+    if mode.unwrap() == emitter_mode {
+        Some(frames.remove(0))
+    } else {
+        None
     }
 }
