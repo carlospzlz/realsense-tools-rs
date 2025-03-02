@@ -1,7 +1,6 @@
 use eframe::egui;
 use eframe::glow;
 use eframe::glow::HasContext;
-use realsense_rust::frame::FrameEx;
 use std::collections::HashSet;
 use std::time::Duration;
 
@@ -9,7 +8,7 @@ const VERTEX_SHADER_SRC: &str = r#"
     #version 330 core
     layout(location = 0) in vec3 position;
     layout(location = 1) in vec2 instanceTranslation;
-    layout(location = 2) in float instanceHeight;
+    layout(location = 2) in float instanceDepth;
     layout(location = 3) in vec4 instanceColor;
 
     uniform mat4 viewProjection;
@@ -17,10 +16,8 @@ const VERTEX_SHADER_SRC: &str = r#"
     out vec4 fragColor;
 
     void main() {
-        //float baseCorrection = (1.0 - instanceHeight) / 2.0;
-        //float baseCorrection = 0.0;
-        vec3 translation = vec3(instanceTranslation.x, instanceTranslation.y, 1.0);
-        vec3 worldPosition = position * vec3(1.0, 1.0, instanceHeight * 100.0) + translation;
+        vec3 translation = vec3(instanceTranslation.x, instanceTranslation.y, instanceDepth);
+        vec3 worldPosition = position * vec3(1.0, 1.0, 1.0) + translation;
         gl_Position = viewProjection * vec4(worldPosition, 1.0);
         fragColor = instanceColor;
     }
@@ -35,6 +32,8 @@ const FRAGMENT_SHADER_SRC: &str = r#"
     }
 "#;
 
+const FRAME_SIZE: (usize, usize) = (640, 480);
+
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
         depth_buffer: 1, // Important for 3D rendering
@@ -45,26 +44,22 @@ fn main() -> Result<(), eframe::Error> {
         realsense_rust::context::Context::new().expect("Failed to create RealSense context");
 
     eframe::run_native(
-        "Glow Example",
+        "Realsense 3D Viewer \u{1F980}",
         options,
         Box::new(|cc| Ok(Box::new(MyApp::new(cc, realsense_ctx)))),
     )
 }
 
 struct MyApp {
-    realsense_ctx: realsense_rust::context::Context,
     pipeline: realsense_rust::pipeline::ActivePipeline,
     program: glow::Program,
     vao: glow::VertexArray,
-    angle: f32,
-    translation: glam::Vec3,
-    rotation: glam::Vec2,
-    last_mouse_pos: Option<egui::Pos2>,
-    instance_height_vbo: glow::NativeBuffer,
+    instance_depth_vbo: glow::NativeBuffer,
     instance_color_vbo: glow::NativeBuffer,
-    previous_frames: Option<realsense_rust::frame::CompositeFrame>,
     depth_frame: Option<realsense_rust::frame::DepthFrame>,
     infrared_frame: Option<realsense_rust::frame::InfraredFrame>,
+    translation: glam::Vec3,
+    rotation: glam::Vec2,
 }
 
 impl MyApp {
@@ -113,7 +108,7 @@ impl MyApp {
         // - position VBO
         // - indexes
         // - instance translation VBO
-        // - instance height VBO
+        // - instance depth VBO
         // - instance color VBO
         // - vertex attrib pointers
         let vao = unsafe { gl.create_vertex_array().unwrap() };
@@ -155,16 +150,18 @@ impl MyApp {
             gl.enable_vertex_attrib_array(position_location);
         }
 
-        // Number of vertices
-        let instance_number = 640 * 640;
+        let instance_number = FRAME_SIZE.0 * FRAME_SIZE.1;
 
         // Instance translations
         let mut translation_data: Vec<f32> = vec![0.0; instance_number * 2];
-        for x in 0..640 {
-            for y in 0..640 {
-                let base_index = (x * 640 + y) * 2;
-                translation_data[base_index] = (x as f32 - 320.0) / 100.0;
-                translation_data[base_index + 1] = (y as f32 - 320.0) / 100.0;
+        let (half_width, half_height) = (FRAME_SIZE.0 as f32 / 2.0, FRAME_SIZE.1 as f32 / 2.0);
+        for row in 0..FRAME_SIZE.1 {
+            for col in 0..FRAME_SIZE.0 {
+                let base_index = (row * FRAME_SIZE.0 + col) * 2;
+                // First pixel in frame is top-left corner
+                translation_data[base_index] = (col as f32 - half_width) / 100.0;
+                translation_data[base_index + 1] =
+                    ((FRAME_SIZE.1 - row) as f32 - half_height) / 100.0;
             }
         }
         let instance_translation_vbo = unsafe { gl.create_buffer().unwrap() };
@@ -193,18 +190,18 @@ impl MyApp {
             gl.vertex_attrib_divisor(location, 1);
         }
 
-        // Initialize instance heights
-        let height_data: Vec<f32> = vec![1.0; instance_number];
-        let instance_height_vbo = unsafe { gl.create_buffer().unwrap() };
+        // Initialize instance depths
+        let depth_data: Vec<f32> = vec![1.0; instance_number];
+        let instance_depth_vbo = unsafe { gl.create_buffer().unwrap() };
         unsafe {
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(instance_height_vbo));
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(instance_depth_vbo));
             gl.buffer_data_u8_slice(
                 glow::ARRAY_BUFFER,
-                &bytemuck::cast_slice(&height_data),
+                &bytemuck::cast_slice(&depth_data),
                 glow::DYNAMIC_DRAW,
             );
 
-            let location = gl.get_attrib_location(program, "instanceHeight").unwrap() as u32;
+            let location = gl.get_attrib_location(program, "instanceDepth").unwrap() as u32;
             gl.vertex_attrib_pointer_f32(
                 location,
                 1,
@@ -249,19 +246,15 @@ impl MyApp {
         }
 
         Self {
-            realsense_ctx,
-            pipeline: pipeline,
-            program: program,
-            vao: vao,
-            angle: 0.0,
-            translation: glam::Vec3::new(0.0, 0.0, -15.0),
-            rotation: glam::Vec2::new(0.0, 0.0),
-            last_mouse_pos: None,
-            instance_height_vbo,
+            pipeline,
+            program,
+            vao,
+            instance_depth_vbo,
             instance_color_vbo,
-            previous_frames: None,
             depth_frame: None,
             infrared_frame: None,
+            translation: glam::Vec3::new(0.0, 0.0, -15.0),
+            rotation: glam::Vec2::new(0.0, 0.0),
         }
     }
 }
@@ -279,46 +272,22 @@ impl eframe::App for MyApp {
         };
 
         if let Some(ref frames) = frames {
-            // Sync
+            // Get a pair of:
+            //  - Depth frame with emitter on
+            //  - IR1 frame with emitter off
+            // For some reason 0 is on (maybe the depth was computer from the
+            // previous two infrared with emitter 1?). However, in the
+            // infrared, 1 gives the frames with no emitter's pattern.
             if self.depth_frame.is_none() {
                 let depth_frames = frames.frames_of_type::<realsense_rust::frame::DepthFrame>();
-                self.depth_frame = frame_of_type_with_emitter(depth_frames, 1);
+                self.depth_frame = frame_of_type_with_emitter(depth_frames, 0);
             }
             if self.infrared_frame.is_none() {
-                let infrared_frames = frames.frames_of_type::<realsense_rust::frame::InfraredFrame>();
+                let infrared_frames =
+                    frames.frames_of_type::<realsense_rust::frame::InfraredFrame>();
                 self.infrared_frame = frame_of_type_with_emitter(infrared_frames, 1);
             }
         }
-
-        // Create buffer of infrared depth 3D bars
-        //if let Some(ref frames) = frames {
-        //    let depth_frames = frames.frames_of_type::<realsense_rust::frame::DepthFrame>();
-        //    let depth_frame = &depth_frames[0];
-        //    let infrared_frames = frames.frames_of_type::<realsense_rust::frame::InfraredFrame>();
-        //    let infrared_frame = &infrared_frames[0];
-        //    let depth_emitter =
-        //        depth_frame.metadata(realsense_rust::kind::Rs2FrameMetadata::FrameEmitterMode);
-        //    let infrared_emitter =
-        //        infrared_frame.metadata(realsense_rust::kind::Rs2FrameMetadata::FrameEmitterMode);
-        //    //println!("{} / {}", depth_frames.len(), infrared_frames.len());
-        //    //println!("{} | {}", depth_emitter.unwrap(), infrared_emitter.unwrap());
-        //    if !depth_frames.is_empty() {
-        //        let depth_frame = &depth_frames[0];
-        //        if let Some(emitter_mode) =
-        //            depth_frame.metadata(realsense_rust::kind::Rs2FrameMetadata::FrameEmitterMode)
-        //        {
-        //            // It seems that when the emitter is off is when depth is sane,
-        //            // I guess that's because it's computed from the previous infrared
-        //            // frames, where the emitter was on.
-        //            if emitter_mode == 1 {
-        //                if let Some(previous_frames) = self.previous_frames.take() {
-        //                    println!("{} | {}", depth_emitter.unwrap(), infrared_emitter.unwrap());
-        //                    let infrared_frames =
-        //                        frames.frames_of_type::<realsense_rust::frame::InfraredFrame>();
-        //                    let infrared_frame = &infrared_frames[0];
-        //                    let emitter = infrared_frame
-        //                        .metadata(realsense_rust::kind::Rs2FrameMetadata::FrameEmitterMode);
-        //                    println!("{}", emitter.unwrap());
 
         if self.depth_frame.is_some() && self.infrared_frame.is_some() {
             let depth_frame = self.depth_frame.take().unwrap();
@@ -329,41 +298,14 @@ impl eframe::App for MyApp {
                 panic!("Make sure depth and infrared frames are the same size");
             }
 
-            let instance_number = 640 * 640;
-            let mut infrared_data: Vec<f32> = vec![0.0; instance_number * 4];
-            let mut depth_data: Vec<f32> = vec![0.0; instance_number];
-            let max_depth = 4000.0; // 4m
-            for x in 0..depth_frame.width() {
-                for yy in 0..depth_frame.height() {
-                    match depth_frame.get_unchecked(x, yy) {
-                        realsense_rust::frame::PixelKind::Z16 { depth } => {
-                            let normalized = (*depth as f32 / max_depth).clamp(0.0, 1.0);
-                            if normalized > 0.05 {
-                                depth_data[x * 640 + yy] = (1.0 - normalized) * 4.0;
-                                match infrared_frame.get_unchecked(x, yy) {
-                                    realsense_rust::frame::PixelKind::Y8 { y } => {
-                                        let base_index = (x * 640 + yy) * 4;
-                                        infrared_data[base_index] = *y as f32 / 255.0;
-                                        infrared_data[base_index + 1] = *y as f32 / 255.0;
-                                        infrared_data[base_index + 2] = *y as f32 / 255.0;
-                                        infrared_data[base_index + 3] = 1.0;
-                                    }
-                                    _ => panic!("Color type is wrong!"),
-                                }
-                            }
-                        }
-                        _ => panic!("Depth type is wrong!"),
-                    }
-                }
-            }
+            let (depth_data, infrared_data) = get_buffers_data(depth_frame, infrared_frame);
 
-            // Make this better
-            // What happens if there no frames?
+            // Get the OpenGL context from the frame
             let gl = frame.gl().expect("Can't get GL from frame");
 
-            // Update instances height
+            // Update instances depth
             unsafe {
-                gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.instance_height_vbo));
+                gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.instance_depth_vbo));
                 gl.buffer_data_u8_slice(
                     glow::ARRAY_BUFFER,
                     &bytemuck::cast_slice(&depth_data),
@@ -382,9 +324,7 @@ impl eframe::App for MyApp {
             }
         }
 
-        // Get the OpenGL context from the frame
-        let gl = frame.gl().expect("Can't get GL from frame");
-
+        // Compute View Projection matrix
         let projection = glam::Mat4::perspective_rh_gl(45.0_f32.to_radians(), 1.0, 0.1, 100.0);
         let input = egui_ctx.input(|i| i.clone());
         self.translation += get_translation(&input);
@@ -396,17 +336,15 @@ impl eframe::App for MyApp {
         let view_projection = projection * view;
 
         unsafe {
-            gl.clear_color(1.0, 0.3, 0.3, 1.0);
+            // Get the OpenGL context from the frame
+            let gl = frame.gl().expect("Can't get GL from frame");
+
+            gl.clear_color(0.0, 0.0, 0.0, 1.0);
             gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
 
             // Enable depth testing
             gl.enable(glow::DEPTH_TEST);
             gl.depth_func(glow::LESS); // Default: Pass if fragment is closer
-
-            // Enable face culling
-            //gl.enable(glow::CULL_FACE);
-            //gl.cull_face(glow::BACK); // Cull back faces (default)
-            //gl.front_face(glow::CW); // Counter-clockwise faces are "front"
 
             gl.use_program(Some(self.program));
             gl.bind_vertex_array(Some(self.vao));
@@ -425,13 +363,11 @@ impl eframe::App for MyApp {
             gl.draw_elements_instanced(glow::TRIANGLES, 36, glow::UNSIGNED_INT, 0, 640 * 640);
         }
 
-        self.previous_frames = frames;
-
         egui_ctx.request_repaint();
     }
 }
 
-///
+/// Starts Real Sense pipeline
 fn start_pipeline(
     devices: Vec<realsense_rust::device::Device>,
     pipeline: realsense_rust::pipeline::InactivePipeline,
@@ -457,8 +393,8 @@ fn start_pipeline(
         .enable_stream(
             realsense_rust::kind::Rs2StreamKind::Depth,
             None,
-            640,
-            0,
+            FRAME_SIZE.0,
+            FRAME_SIZE.1,
             realsense_rust::kind::Rs2Format::Z16,
             30,
         )
@@ -466,8 +402,8 @@ fn start_pipeline(
         .enable_stream(
             realsense_rust::kind::Rs2StreamKind::Infrared,
             Some(1),
-            640,
-            0,
+            FRAME_SIZE.0,
+            FRAME_SIZE.1,
             realsense_rust::kind::Rs2Format::Y8,
             30,
         )
@@ -478,27 +414,24 @@ fn start_pipeline(
         .expect("Failed to start pipeline");
 
     for mut sensor in pipeline.profile().device().sensors() {
+        // Interleave mode, so we have depth and we can overlay IR1
         if sensor.supports_option(realsense_rust::kind::Rs2Option::EmitterOnOff) {
             sensor
                 .set_option(realsense_rust::kind::Rs2Option::EmitterOnOff, 1.0)
                 .expect("Failed to set option: EmitterOnOff");
         }
+        // Enable Auto Exposure
         if sensor.supports_option(realsense_rust::kind::Rs2Option::EnableAutoExposure) {
             sensor
-                .set_option(realsense_rust::kind::Rs2Option::EnableAutoExposure, 0.0)
+                .set_option(realsense_rust::kind::Rs2Option::EnableAutoExposure, 1.0)
                 .expect("Failed to set option: EnableAutoExposure");
         }
-        //if sensor.supports_option(realsense_rust::kind::Rs2Option::EmitterEnabled) {
-        //    sensor
-        //        .set_option(realsense_rust::kind::Rs2Option::EmitterEnabled, 0.0)
-        //        .expect("Failed to set option: EmitterEnabled");
-        //}
     }
 
     pipeline
 }
 
-///
+/// Finds first Real Sense device available
 fn find_realsense(
     devices: Vec<realsense_rust::device::Device>,
 ) -> Option<realsense_rust::device::Device> {
@@ -522,6 +455,7 @@ fn match_info(
     }
 }
 
+/// Creates shader program to draw cubes with depth translation
 fn create_shader_program(gl: &glow::Context) -> glow::NativeProgram {
     unsafe {
         // Vertex shader
@@ -599,4 +533,39 @@ fn frame_of_type_with_emitter<T: realsense_rust::frame::FrameEx>(
     } else {
         None
     }
+}
+
+fn get_buffers_data(
+    depth_frame: realsense_rust::frame::DepthFrame,
+    infrared_frame: realsense_rust::frame::InfraredFrame,
+) -> (Vec<f32>, Vec<f32>) {
+    let (width, height) = (depth_frame.width(), depth_frame.height());
+    let instance_number = width * height;
+    let mut infrared_data: Vec<f32> = vec![0.0; instance_number * 4];
+    let mut depth_data: Vec<f32> = vec![0.0; instance_number];
+    let max_depth = 4000.0; // 4m
+    for col in 0..width {
+        for row in 0..height {
+            match depth_frame.get_unchecked(col, row) {
+                realsense_rust::frame::PixelKind::Z16 { depth } => {
+                    let normalized = (*depth as f32 / max_depth).clamp(0.0, 1.0);
+                    if normalized > 0.05 {
+                        depth_data[row * width + col] = (1.0 - normalized) * 4.0;
+                        match infrared_frame.get_unchecked(col, row) {
+                            realsense_rust::frame::PixelKind::Y8 { y } => {
+                                let base_index = (row * width + col) * 4;
+                                infrared_data[base_index] = *y as f32 / 255.0;
+                                infrared_data[base_index + 1] = *y as f32 / 255.0;
+                                infrared_data[base_index + 2] = *y as f32 / 255.0;
+                                infrared_data[base_index + 3] = 1.0;
+                            }
+                            _ => panic!("Color type is wrong!"),
+                        }
+                    }
+                }
+                _ => panic!("Depth type is wrong!"),
+            }
+        }
+    }
+    (depth_data, infrared_data)
 }
