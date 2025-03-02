@@ -32,8 +32,10 @@ struct MyApp {
     accel_stream_enabled: bool,
     gyro_stream_enabled: bool,
     global_time_enabled: bool,
-    emitter_enabled: bool,
     auto_exposure_enabled: bool,
+    emitter_enabled: bool,
+    emitter_on_off: bool,
+    emitter_always_on: bool,
 }
 
 impl MyApp {
@@ -53,8 +55,10 @@ impl MyApp {
             accel_stream_enabled: true,
             gyro_stream_enabled: true,
             global_time_enabled: true,
-            emitter_enabled: true,
             auto_exposure_enabled: true,
+            emitter_enabled: true,
+            emitter_on_off: false,
+            emitter_always_on: false,
         }
     }
 }
@@ -126,7 +130,7 @@ impl MyApp {
         };
 
         let new_serial_number = CString::new(new_serial_number).expect("Failed to create CString");
-        self.pipeline = self.start_pipeline(&new_serial_number, pipeline);
+        self.start_pipeline(&new_serial_number, pipeline);
     }
 
     fn update_current_pipeline(&mut self) {
@@ -138,7 +142,7 @@ impl MyApp {
             let pipeline = pipeline.stop();
 
             let serial_number = CString::new(serial_number).expect("Failed to create CString");
-            self.pipeline = self.start_pipeline(&serial_number, pipeline);
+            self.start_pipeline(&serial_number, pipeline);
         }
     }
 
@@ -146,7 +150,7 @@ impl MyApp {
         &mut self,
         serial_number: &CString,
         pipeline: realsense_rust::pipeline::InactivePipeline,
-    ) -> Option<realsense_rust::pipeline::ActivePipeline> {
+    ) {
         if !self.depth_stream_enabled
             && !self.color_stream_enabled
             && !self.infrared_1_stream_enabled
@@ -155,7 +159,8 @@ impl MyApp {
             && !self.gyro_stream_enabled
         {
             self.warning = Some("We need at least one stream to start the pipeline".to_string());
-            return None;
+            self.pipeline = None;
+            return;
         }
 
         let config = self.create_config(serial_number);
@@ -163,9 +168,9 @@ impl MyApp {
             .start(Some(config))
             .expect("Failed to start pipeline");
 
-        self.update_sensors();
+        self.pipeline = Some(pipeline);
 
-        Some(pipeline)
+        self.update_all_options_in_sensors();
     }
 
     /// Config is consumed by start(), we need to create one each time
@@ -283,7 +288,7 @@ impl MyApp {
         config
     }
 
-    fn update_sensors(&mut self) {
+    fn update_all_options_in_sensors(&mut self) {
         if let Some(pipeline) = &self.pipeline {
             for mut sensor in pipeline.profile().device().sensors() {
                 if sensor.supports_option(realsense_rust::kind::Rs2Option::GlobalTimeEnabled) {
@@ -292,17 +297,43 @@ impl MyApp {
                         .set_option(realsense_rust::kind::Rs2Option::GlobalTimeEnabled, val)
                         .expect("Failed to set option: GlobalTimeEnabled");
                 }
+                if sensor.supports_option(realsense_rust::kind::Rs2Option::EnableAutoExposure) {
+                    let val = if self.auto_exposure_enabled { 1.0 } else { 0.0 };
+                    sensor
+                        .set_option(realsense_rust::kind::Rs2Option::EnableAutoExposure, val)
+                        .expect("Failed to set option: EnableAutoExposure");
+                }
                 if sensor.supports_option(realsense_rust::kind::Rs2Option::EmitterEnabled) {
                     let val = if self.emitter_enabled { 1.0 } else { 0.0 };
                     sensor
                         .set_option(realsense_rust::kind::Rs2Option::EmitterEnabled, val)
                         .expect("Failed to set option: EmitterEnabled");
                 }
-                if sensor.supports_option(realsense_rust::kind::Rs2Option::EnableAutoExposure) {
-                    let val = if self.auto_exposure_enabled { 1.0 } else { 0.0 };
+                if sensor.supports_option(realsense_rust::kind::Rs2Option::EmitterOnOff) {
+                    let val = if self.emitter_on_off { 1.0 } else { 0.0 };
                     sensor
-                        .set_option(realsense_rust::kind::Rs2Option::EnableAutoExposure, val)
-                        .expect("Failed to set option: EnableAutoExposure");
+                        .set_option(realsense_rust::kind::Rs2Option::EmitterOnOff, val)
+                        .expect("Failed to set option: EmitterOnOff");
+                }
+                if sensor.supports_option(realsense_rust::kind::Rs2Option::EmitterAlwaysOn) {
+                    let val = if self.emitter_always_on { 1.0 } else { 0.0 };
+                    sensor
+                        .set_option(realsense_rust::kind::Rs2Option::EmitterAlwaysOn, val)
+                        .expect("Failed to set option: EmitterAlwaysOn");
+                }
+            }
+        }
+    }
+
+    fn update_sensors(&mut self, option: realsense_rust::kind::Rs2Option, val: bool) {
+        if let Some(pipeline) = &self.pipeline {
+            for mut sensor in pipeline.profile().device().sensors() {
+                if sensor.supports_option(option) {
+                    let val = if val { 1.0 } else { 0.0 };
+                    match sensor.set_option(option, val) {
+                        Ok(_) => (),
+                        Err(e) => println!("Error while setting {:?} to {}: {}", option, val, e),
+                    }
                 }
             }
         }
@@ -606,15 +637,10 @@ impl MyApp {
                     ui.label("Global Time");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                         if ui.checkbox(&mut self.global_time_enabled, "").clicked() {
-                            self.update_sensors();
-                        }
-                    });
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Emitter");
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                        if ui.checkbox(&mut self.emitter_enabled, "").clicked() {
-                            self.update_sensors();
+                            self.update_sensors(
+                                realsense_rust::kind::Rs2Option::GlobalTimeEnabled,
+                                self.global_time_enabled,
+                            );
                         }
                     });
                 });
@@ -622,7 +648,43 @@ impl MyApp {
                     ui.label("Auto Exposure");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                         if ui.checkbox(&mut self.auto_exposure_enabled, "").clicked() {
-                            self.update_sensors();
+                            self.update_sensors(
+                                realsense_rust::kind::Rs2Option::EnableAutoExposure,
+                                self.auto_exposure_enabled,
+                            );
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Emitter");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        if ui.checkbox(&mut self.emitter_enabled, "").clicked() {
+                            self.update_sensors(
+                                realsense_rust::kind::Rs2Option::EmitterEnabled,
+                                self.emitter_enabled,
+                            );
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Emitter On Off");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        if ui.checkbox(&mut self.emitter_on_off, "").clicked() {
+                            self.update_sensors(
+                                realsense_rust::kind::Rs2Option::EmitterOnOff,
+                                self.emitter_on_off,
+                            );
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Emitter Always");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        if ui.checkbox(&mut self.emitter_always_on, "").clicked() {
+                            self.update_sensors(
+                                realsense_rust::kind::Rs2Option::EmitterAlwaysOn,
+                                self.emitter_always_on,
+                            );
                         }
                     });
                 });
@@ -678,25 +740,28 @@ impl MyApp {
                     let separator = egui::Separator::default();
                     ui.add(separator.horizontal());
                 });
+
                 if let Some(pipeline) = &self.pipeline {
                     egui::ScrollArea::vertical()
-                        .auto_shrink([false, false])
+                        .auto_shrink([false, true])
                         .show(ui, |ui| {
                             // Print info of all streams
                             for stream_profile in pipeline.profile().streams() {
                                 let kind = stream_profile.kind();
                                 let index = stream_profile.index();
                                 ui.collapsing(format!("{:?}:{index}", kind), |ui| {
-                                    egui::Grid::new("sensor_info").striped(true).show(ui, |ui| {
-                                        ui.label("Format");
-                                        ui.label(format!("{:?}", stream_profile.format()));
-                                        ui.end_row();
-                                        ui.label("Unique ID");
-                                        ui.label(format!("{}", stream_profile.unique_id()));
-                                        ui.end_row();
-                                        ui.label("Framerate");
-                                        ui.label(format!("{}", stream_profile.framerate()));
-                                    });
+                                    egui::Grid::new("streams_info")
+                                        .striped(true)
+                                        .show(ui, |ui| {
+                                            ui.label("Format");
+                                            ui.label(format!("{:?}", stream_profile.format()));
+                                            ui.end_row();
+                                            ui.label("Unique ID");
+                                            ui.label(format!("{}", stream_profile.unique_id()));
+                                            ui.end_row();
+                                            ui.label("Framerate");
+                                            ui.label(format!("{}", stream_profile.framerate()));
+                                        });
                                     match stream_profile.intrinsics() {
                                         Ok(intrinsics) => {
                                             ui.label(egui::RichText::new("Intrinsics:").strong());
@@ -822,6 +887,42 @@ impl MyApp {
                                             }
                                         }
                                     });
+                                });
+                                ui.horizontal(|_ui| {});
+                            }
+
+                            // Sensors Info
+                            ui.horizontal(|ui| {
+                                ui.label("Sensors Info");
+                                let separator = egui::Separator::default();
+                                ui.add(separator.horizontal());
+                            });
+                            // Print info of all streams
+                            for sensor in pipeline.profile().device().sensors() {
+                                let name = sensor
+                                    .info(realsense_rust::kind::Rs2CameraInfo::Name)
+                                    .unwrap();
+                                let name = String::from(name.to_str().unwrap());
+                                ui.collapsing(format!("{}", name), |ui| {
+                                    egui::Grid::new("sensors_info")
+                                        .striped(true)
+                                        .show(ui, |ui| {
+                                            for option in [
+                                                realsense_rust::kind::Rs2Option::GlobalTimeEnabled,
+                                                realsense_rust::kind::Rs2Option::EnableAutoExposure,
+                                                realsense_rust::kind::Rs2Option::EmitterEnabled,
+                                                realsense_rust::kind::Rs2Option::EmitterOnOff,
+                                                realsense_rust::kind::Rs2Option::EmitterAlwaysOn,
+                                            ] {
+                                                ui.label(format!("{:?}", option));
+                                                if let Some(value) = sensor.get_option(option) {
+                                                    ui.label(format!("{value}"));
+                                                } else {
+                                                    ui.label("Unsupported");
+                                                }
+                                                ui.end_row();
+                                            }
+                                        });
                                 });
                                 ui.horizontal(|_ui| {});
                             }

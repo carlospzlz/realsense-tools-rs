@@ -36,7 +36,7 @@ const FRAME_SIZE: (usize, usize) = (640, 480);
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
-        depth_buffer: 1, // Important for 3D rendering
+        viewport: egui::ViewportBuilder::default().with_inner_size([730.0, 550.0]),
         ..Default::default()
     };
 
@@ -407,13 +407,19 @@ fn start_pipeline(
             realsense_rust::kind::Rs2Format::Y8,
             30,
         )
-        .expect("Failed to enable color stream");
+        .expect("Failed to enable infrared stream");
 
     let pipeline = pipeline
         .start(Some(config))
         .expect("Failed to start pipeline");
 
     for mut sensor in pipeline.profile().device().sensors() {
+        // Enable emitter
+        //if sensor.supports_option(realsense_rust::kind::Rs2Option::EmitterEnabled) {
+        //    sensor
+        //        .set_option(realsense_rust::kind::Rs2Option::EmitterEnabled, 1.0)
+        //        .expect("Failed to set option: EmitterEnabled");
+        //}
         // Interleave mode, so we have depth and we can overlay IR1
         if sensor.supports_option(realsense_rust::kind::Rs2Option::EmitterOnOff) {
             sensor
