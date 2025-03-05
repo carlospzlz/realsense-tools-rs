@@ -35,6 +35,9 @@ const FRAGMENT_SHADER_SRC: &str = r#"
 const FRAME_SIZE: (usize, usize) = (640, 480);
 
 fn main() -> Result<(), eframe::Error> {
+    let args: Vec<String> = std::env::args().collect();
+    let enable_auto_exposure = args.len() > 1 && args[1] == "--auto-exposure";
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([730.0, 550.0]),
         ..Default::default()
@@ -46,7 +49,13 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native(
         "Realsense 3D Viewer \u{1F980}",
         options,
-        Box::new(|cc| Ok(Box::new(MyApp::new(cc, realsense_ctx)))),
+        Box::new(|cc| {
+            Ok(Box::new(MyApp::new(
+                cc,
+                realsense_ctx,
+                enable_auto_exposure,
+            )))
+        }),
     )
 }
 
@@ -66,12 +75,13 @@ impl MyApp {
     fn new(
         cc: &eframe::CreationContext<'_>,
         realsense_ctx: realsense_rust::context::Context,
+        enable_auto_exposure: bool,
     ) -> Self {
         // Start pipeline
         let devices = realsense_ctx.query_devices(HashSet::new());
         let pipeline = realsense_rust::pipeline::InactivePipeline::try_from(&realsense_ctx)
             .expect("Failed to create inactive pipeline from context");
-        let pipeline = start_pipeline(devices, pipeline);
+        let pipeline = start_pipeline(devices, pipeline, enable_auto_exposure);
 
         // Prepare GL
         let gl = cc
@@ -367,10 +377,11 @@ impl eframe::App for MyApp {
     }
 }
 
-/// Starts Real Sense pipeline
+/// Starts RealSense pipeline
 fn start_pipeline(
     devices: Vec<realsense_rust::device::Device>,
     pipeline: realsense_rust::pipeline::InactivePipeline,
+    enable_auto_exposure: bool,
 ) -> realsense_rust::pipeline::ActivePipeline {
     let realsense_device = find_realsense(devices);
 
@@ -415,11 +426,11 @@ fn start_pipeline(
 
     for mut sensor in pipeline.profile().device().sensors() {
         // Enable emitter
-        //if sensor.supports_option(realsense_rust::kind::Rs2Option::EmitterEnabled) {
-        //    sensor
-        //        .set_option(realsense_rust::kind::Rs2Option::EmitterEnabled, 1.0)
-        //        .expect("Failed to set option: EmitterEnabled");
-        //}
+        if sensor.supports_option(realsense_rust::kind::Rs2Option::EmitterEnabled) {
+            sensor
+                .set_option(realsense_rust::kind::Rs2Option::EmitterEnabled, 1.0)
+                .expect("Failed to set option: EmitterEnabled");
+        }
         // Interleave mode, so we have depth and we can overlay IR1
         if sensor.supports_option(realsense_rust::kind::Rs2Option::EmitterOnOff) {
             sensor
@@ -428,8 +439,9 @@ fn start_pipeline(
         }
         // Enable Auto Exposure
         if sensor.supports_option(realsense_rust::kind::Rs2Option::EnableAutoExposure) {
+            let val = if enable_auto_exposure { 1.0 } else { 0.0 };
             sensor
-                .set_option(realsense_rust::kind::Rs2Option::EnableAutoExposure, 1.0)
+                .set_option(realsense_rust::kind::Rs2Option::EnableAutoExposure, val)
                 .expect("Failed to set option: EnableAutoExposure");
         }
     }
