@@ -1,8 +1,8 @@
 # RealSense Tools in Rust
 
 This project contains a suite of tools to work with Intel RealSense cameras
-using the `realsense-rust` crate. The tools provide visualization and
-interaction with camera streams and sensors.
+using the [realsense_rust](https://docs.rs/realsense-rust) crate. The tools
+provide visualization and interaction with camera streams and sensors.
 
 ## Tools
 
@@ -37,6 +37,6 @@ cargo run --bin realsense-3d-viewer
 
 ## Dependencies
 
-- `realsense-rust`: Interface with RealSense devices.
-- `egui`: GUI framework for Rust.
-- `glow`: OpenGL renderer for 3D visualization.
+- [realsense_rust](https://docs.rs/realsense-rust): Interface with RealSense devices.
+- [egui](https://docs.rs/egui): GUI framework for Rust.
+- [glow](https://docs.rs/glow): OpenGL renderer for 3D visualization.
