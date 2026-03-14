@@ -2,6 +2,9 @@
 name = "realsense-tools-rs"
 version = "0.1.0"
 edition = "2021"
+description = "Tools for visualizing and interacting with RealSense cameras in Rust"
+license = "GPL-3.0"
+repository = "https://github.com/carlospzlz/realsense-tools-rs"
 
 [[bin]]
 name = "enumerate-devices"
