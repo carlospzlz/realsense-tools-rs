@@ -540,8 +540,7 @@ impl MyApp {
                 let mut left_corner =
                     egui::Pos2::new(area.min.x + bar_width, area.min.y + bar_max_height);
                 for (component, color) in data.into_iter().zip(colors.into_iter()) {
-                    // Positive values grow downwards. Reverse it
-                    let height = -component * bar_max_height * scale;
+                    let height = component * bar_max_height * scale;
                     // Clamp to limits of area's height
                     let height = height.clamp(-bar_max_height, bar_max_height);
                     let right_corner =
